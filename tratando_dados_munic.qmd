@@ -1,0 +1,72 @@
+---
+title: "Tratamento de Dados da base MUNIC para pesquisa sobre capacidades e resposta climática"
+---
+# Configuração
+
+## Pacotes necessários
+```{r}
+library(here)
+library(httr)
+library("usethis") 
+```
+
+## Configuração de ambiente
+```{r}
+create_project(".")
+
+use_readme_md()
+
+use_gpl3_license()
+```
+# Importando dados
+Os dados da MUNIC 2020 estão disponíveis na página do IBGE: 
+- 2013: https://ftp.ibge.gov.br/Perfil_Municipios/2013/base_MUNIC_ods_2013.zip
+
+- 2017: https://ftp.ibge.gov.br/Perfil_Municipios/2017/Base_de_Dados/Base_MUNIC_2017_ods.zip
+
+- 2020: https://ftp.ibge.gov.br/Perfil_Municipios/2020/Base_de_Dados/Base_MUNIC_2020.ods 
+
+
+```{r}
+
+url_2013 <- "https://ftp.ibge.gov.br/Perfil_Municipios/2013/base_MUNIC_ods_2013.zip"
+
+url_2017 <- "https://ftp.ibge.gov.br/Perfil_Municipios/2017/Base_de_Dados/Base_MUNIC_2017_ods.zip"
+
+
+url_2020 <- "https://ftp.ibge.gov.br/Perfil_Municipios/2020/Base_de_Dados/Base_MUNIC_2020.ods"
+
+
+urls_dados <- list(url_2013, url_2017, url_2020)
+
+pasta_originais <- here("dados_originais")
+
+if(!dir.exists(pasta_originais))
+    {dir.create(pasta_originais)}
+
+for(link in urls_dados){
+    out_file = file.path(pasta_originais, basename(link))
+    if(!file.exists(out_file)){
+download.file(
+    url = link, 
+    destfile = file.path(pasta_originais, basename(link)), 
+    mode = "wb")
+    }
+}
+
+```
+
+# Selecionando planilhas de interesse
+
+
+```{r}
+
+```
+
+# Selecionando colunas de interesse
+
+
+```{r}
+
+```
+
