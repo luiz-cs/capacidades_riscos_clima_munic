@@ -4,10 +4,22 @@ title: "Tratamento de Dados da base MUNIC para pesquisa sobre capacidades e resp
 # Configuração
 
 ## Pacotes necessários
+
+```{r}
+"install.packakges('here')
+install.packakges('httr')
+install.packakges('usethis') 
+install.packakges('readODS')
+install.packakges('tidyverse')
+install.packakges('labelled')"
+```
 ```{r}
 library(here)
 library(httr)
 library("usethis") 
+library(readODS)
+library(tidyverse)
+library(labelled)
 ```
 
 ## Configuração de ambiente
@@ -56,17 +68,59 @@ download.file(
 
 ```
 
+Descompactando arquivos
+
+```{r}
+arquivos_zip <- list.files(pasta_originais, pattern = "\\.zip$", full.names = TRUE)
+
+for (zip_file in arquivos_zip) {
+  unzip(zip_file, exdir = pasta_originais)
+}
+```
+
 # Selecionando planilhas de interesse
 
+### 2013
+```{r}
+munic_2013 <- read_ods(here(pasta_originais, "base.ods"), sheet = "Gestão de riscos")
+
+munic_2013 <- munic_2013 |>
+    select(A1, A183, A186, A189, A190, A196, A198, A199,
+           A202,  A206, A208, A209, A211, A220, A221,
+           A225, A184, A185, A187, A188, A197, A207)
+
+munic_2013 <- munic_2013 |>
+    set_variable_labels(
+      A1 = "Label for A1", 
+      A183 = "Label for A183", 
+      A186 = "Label for A186", 
+      A189 = "Label for A189", 
+      A190 = "Label for A190", 
+      A196 = "Label for A196", 
+      A198 = "Label for A198", 
+      A199 = "Label for A199",
+      A202 = "Label for A202",  
+      A206 = "Label for A206", 
+      A208 = "Label for A208", 
+      A209 = "Label for A209", 
+      A211 = "Label for A211", 
+      A220 = "Label for A220", 
+      A221 = "Label for A221",
+      A225 = "Label for A225", 
+      A184 = "Label for A184", 
+      A185 = "Label for A185", 
+      A187 = "Label for A187", 
+      A188 = "Label for A188", 
+      A197 = "Label for A197", 
+      A207 = "Label for A207"
+    )
+```
+
+# Gráficos descritivos
+
 
 ```{r}
 
 ```
 
-# Selecionando colunas de interesse
-
-
-```{r}
-
-```
-
+# Análise
