@@ -1,9 +1,13 @@
 ---
 title: "Tratamento de Dados da base MUNIC para pesquisa sobre capacidades e resposta climática"
+authors: "Luiz C Soares e Pedro Aquino
 ---
+
 # Configuração
 
 ## Pacotes necessários
+
+Nesta seção serão baixados os pacotes que serão utilizados no processamento destes dados
 
 ```{r}
 "install.packakges('here')
@@ -13,16 +17,19 @@ install.packakges('readODS')
 install.packakges('tidyverse')
 install.packakges('labelled')"
 ```
+
 ```{r}
 library(here)
 library(httr)
-library("usethis") 
+library(usethis) 
 library(readODS)
 library(tidyverse)
 library(labelled)
+library(ggplot2)
 ```
 
 ## Configuração de ambiente
+
 ```{r}
 create_project(".")
 
@@ -30,14 +37,16 @@ use_readme_md()
 
 use_gpl3_license()
 ```
+
 # Importando dados
-Os dados da MUNIC 2020 estão disponíveis na página do IBGE: 
-- 2013: https://ftp.ibge.gov.br/Perfil_Municipios/2013/base_MUNIC_ods_2013.zip
 
-- 2017: https://ftp.ibge.gov.br/Perfil_Municipios/2017/Base_de_Dados/Base_MUNIC_2017_ods.zip
+Os dados da MUNIC 2020 estão disponíveis na página do IBGE:
 
-- 2020: https://ftp.ibge.gov.br/Perfil_Municipios/2020/Base_de_Dados/Base_MUNIC_2020.ods 
+-   2013: https://ftp.ibge.gov.br/Perfil_Municipios/2013/base_MUNIC_ods_2013.zip
 
+-   2017: https://ftp.ibge.gov.br/Perfil_Municipios/2017/Base_de_Dados/Base_MUNIC_2017_ods.zip
+
+-   2020: https://ftp.ibge.gov.br/Perfil_Municipios/2020/Base_de_Dados/Base_MUNIC_2020.ods
 
 ```{r}
 
@@ -81,46 +90,73 @@ for (zip_file in arquivos_zip) {
 # Selecionando planilhas de interesse
 
 ### 2013
+
 ```{r}
 munic_2013 <- read_ods(here(pasta_originais, "base.ods"), sheet = "Gestão de riscos")
 
 munic_2013 <- munic_2013 |>
-    select(A1, A183, A186, A189, A190, A196, A198, A199,
-           A202,  A206, A208, A209, A211, A220, A221,
-           A225, A184, A185, A187, A188, A197, A207)
+    select(A1, A183, A184, A185, 
+           A186, A187, A188, A189, 
+           A190, A196, A197, A198, 
+           A199, A202, A206, A207, 
+           A208, A209, A211, A220, 
+           A221, A225) 
 
 munic_2013 <- munic_2013 |>
     set_variable_labels(
-      A1 = "Label for A1", 
-      A183 = "Label for A183", 
-      A186 = "Label for A186", 
-      A189 = "Label for A189", 
-      A190 = "Label for A190", 
-      A196 = "Label for A196", 
-      A198 = "Label for A198", 
-      A199 = "Label for A199",
-      A202 = "Label for A202",  
-      A206 = "Label for A206", 
-      A208 = "Label for A208", 
-      A209 = "Label for A209", 
-      A211 = "Label for A211", 
-      A220 = "Label for A220", 
-      A221 = "Label for A221",
-      A225 = "Label for A225", 
-      A184 = "Label for A184", 
-      A185 = "Label for A185", 
-      A187 = "Label for A187", 
-      A188 = "Label for A188", 
-      A197 = "Label for A197", 
-      A207 = "Label for A207"
+      A1 = "Código do Município", 
+      A183 = "Plano Diretor contempla enchentes e inundações?", 
+      A186 = "Plano Diretor contempla escorramento e deslizamento?", 
+      A189 = "Tem plano municipal de redução de riscos?", 
+      A190 = "Tem carta geotécnica de aptidão à urbanização?", 
+      A196 = "Tem mapeamento de área de risco de enchentes ou inundações?", 
+      A198 = "Tem mecanismos de controle para evitar ocupação em área suscetível a desastres?", 
+      A199 = "Tem plano de contingência?",
+      A202 = "Tem cadastro de risco?",  
+      A206 = "Tem mapeamento de área de risco em encosta?", 
+      A208 = "Tem mecanismos de controle para evitar ocupação em área suscetível a desastre nas encostas?", 
+      A209 = "Tem plano de contingência para desastres em encostas?", 
+      A211 = "Tem sistema de alerta antecipado para deslizamento de encostas?", 
+      A220 = "Tem unidade do corpo de bombeiros?", 
+      A221 = "Tem coordenação municipal de defesa civil?",
+      A225 = "Tem núcleos comunitários de defesa civil?", 
+      A184 = "Tem lei de uso e ocupação do solo para enchentes ou inundações?", 
+      A185 = "Tem lei específica para enchentes ou inundações", 
+      A187 = "Tem lei de uso e ocupação do solo para escorregamentos ou deslizamento de encostas?", 
+      A188 = "Tem lei específica para escorregamento ou deslizamento de encosta?", 
+      A197 = "Tem programa habitacional para realocação de população em área de risco de enchente ou inundação?", 
+      A207 = "Tem programa habitacional para realocação de população em área de risco de escorregamento ou deslizamento?"
     )
+```
+
+### 2017
+
+```{r}
+
+```
+
+### 2020
+
+```{r}
+
+```
+
+## Juntar as três tabelas
+
+```{r}
+
 ```
 
 # Gráficos descritivos
 
-
 ```{r}
-
+munic_2013 |>
+    group_by(A220) |>
+    summarise(Ocorrencias = n()) |>
+    ggplot(
+        aes(x = A220, y = Ocorrencias))+
+        geom_col()+
+        theme_bw()
 ```
 
 # Análise
