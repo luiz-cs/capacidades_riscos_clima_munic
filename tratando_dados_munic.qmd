@@ -132,13 +132,79 @@ munic_2013 <- munic_2013 |>
 ### 2017
 
 ```{r}
+munic_2017 <- read_ods(here(pasta_originais, "base.ods"), sheet = "Gestão de riscos")
+munic_2017 <- munic_2017 |>
+    select(CodMun, MGRD171, MGRD172, MGRD173,
+            MGRD174, MGRD175, MGRD176, MGRD177, 
+            MGRD178, MGRD181, MGRD182, MGRD183, 
+            MGRD184, MGRD187, MGRD191, MGRD192,
+            MGRD193, MGRD194, MGRD196, MGRD201, 
+            MGRD202, MGRD203) 
 
+munic_2017 <- munic_2017 |>
+    set_variable_labels(
+      CodMun = "Código do Município", 
+      MGRD171 = "Plano Diretor contempla enchentes e inundações?", 
+      MGRD172 = "Tem lei de uso e ocupação do solo para enchentes ou inundações?", 
+      MGRD173 = "Tem lei específica para enchentes ou inundações?", 
+      MGRD174 = "Plano Diretor contempla escorramento e deslizamento?", 
+      MGRD175 = "Tem lei de uso e ocupação do solo para escorregamentos ou deslizamento de encostas?", 
+      MGRD176 = "Tem lei específica para escorregamento ou deslizamento de encosta?", 
+      MGRD177 = "Tem plano municipal de redução de riscos?",
+      MGRD178 = "Tem carta geotécnica de aptidão à urbanização?",  
+      MGRD181 = "Tem mapeamento de área de risco de enchentes ou inundações?", 
+      MGRD182 = "Tem programa habitacional para realocação de população em área de risco de enchente ou inundação?", 
+      MGRD183 = "Tem mecanismos de controle para evitar ocupação em área suscetível a desastres?", 
+      MGRD184 = "Tem plano de contingência?", 
+      MGRD187 = "Tem cadastro de risco?", 
+      MGRD191 = "Tem mapeamento de área de risco em encosta?",
+      MGRD192 = "Tem programa habitacional para realocação de população em área de risco de escorregamento ou deslizamento?", 
+      MGRD193 = "Tem mecanismos de controle para evitar ocupação em área suscetível a desastre nas encostas?", 
+      MGRD194 = "Tem plano de contingência para desastres em encostas?", 
+      MGRD196 = "Tem sistema de alerta antecipado para deslizamento de encostas?", 
+      MGRD201 = "Tem unidade do corpo de bombeiros?", 
+      MGRD202 = "Tem coordenação municipal de defesa civil?", 
+      MGRD203 = "Tem núcleos comunitários de defesa civil?"
+    )
 ```
 
 ### 2020
 
 ```{r}
+munic_2020 <- read_ods(here(pasta_originais, "base.ods"), sheet = "Gestão de riscos")
+munic_2020 <- munic_2020 |>
+    select(CodMun, Mgrd171, Mgrd172, Mgrd173,
+            Mgrd174, Mgrd75, Mgrd176, Mgrd177, 
+            Mgrd178, Mgrd181, Mgrd182, Mgrd183, 
+            Mgrd184, Mgrd187, Mgrd201, Mgrd202,
+            Mgrd203, Mgrd204, Mgrd206, Mgrd211, 
+            Mgrd212, Mgrd213) 
 
+munic_2020 <- munic_2020 |>
+    set_variable_labels(
+      CodMun = "Código do Município", 
+      Mgrd171 = "Plano Diretor contempla enchentes e inundações?", 
+      Mgrd172 = "Tem lei de uso e ocupação do solo para enchentes ou inundações?", 
+      Mgrd177 = "Tem plano municipal de redução de riscos?", 
+      Mgrd178 = "Tem carta geotécnica de aptidão à urbanização?", 
+      Mgrd181 = "Tem mapeamento de área de risco de enchentes ou inundações?", 
+      Mgrd183 = "Tem mecanismos de controle para evitar ocupação em área suscetível a desastres?", 
+      Mgrd184 = "Tem plano de contingência?",
+      Mgrd187 = "Tem cadastro de risco?",  
+      Mgrd201 = "Tem mapeamento de área de risco em encosta?", 
+      Mgrd203 = "Tem mecanismos de controle para evitar ocupação em área suscetível a desastre nas encostas?", 
+      Mgrd204 = "Tem plano de contingência para desastres em encostas?", 
+      Mgrd206 = "Tem sistema de alerta antecipado para deslizamento de encostas?", 
+      Mgrd211 = "Tem unidade do corpo de bombeiros?", 
+      Mgrd212 = "Tem coordenação municipal de defesa civil?",
+      Mgrd213 = "Tem núcleos comunitários de defesa civil?", 
+      Mgrd174 = "Plano Diretor contempla escorramento e deslizamento?", 
+      Mgrd173 = "Tem lei específica para enchentes ou inundações", 
+      Mgrd175 = "Tem lei de uso e ocupação do solo para escorregamentos ou deslizamento de encostas?", 
+      Mgrd176 = "Tem lei específica para escorregamento ou deslizamento de encosta?", 
+      Mgrd182 = "Tem programa habitacional para realocação de população em área de risco de enchente ou inundação?", 
+      Mgrd202 = "Tem programa habitacional para realocação de população em área de risco de escorregamento ou deslizamento?"
+    )
 ```
 
 ## Juntar as três tabelas
