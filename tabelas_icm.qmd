@@ -1,0 +1,84 @@
+```{r}
+library(here)
+library(dplyr)
+```
+```{r}
+list_urls <- list("https://www.gov.br/mdr/pt-br/assuntos/protecao-e-defesa-civil/listaA_2026.xlsx", 
+    "https://www.gov.br/mdr/pt-br/assuntos/protecao-e-defesa-civil/listaB_2026.xlsx",
+    "https://www.gov.br/mdr/pt-br/assuntos/protecao-e-defesa-civil/listaC_2026.xlsx",
+    "https://www.gov.br/mdr/pt-br/assuntos/protecao-e-defesa-civil/listaD_2026.xlsx")
+
+# Criar pasta se não existir
+pasta_originais <- here("dados_originais")
+if(!dir.exists(pasta_originais)) {
+  dir.create(pasta_originais)
+}
+
+# Iterar sobre a lista para download
+for(link in list_urls) {
+  out_file <- file.path(pasta_originais, basename(link))
+  
+  if(!file.exists(out_file)) {
+    download.file(
+      url = link, 
+      destfile = out_file, 
+      mode = "wb"
+    )
+  }
+}
+
+
+```
+
+
+```{r}
+library(readxl)
+
+# Listar arquivos baixados
+arquivos_excel <- list.files(pasta_originais, pattern = "lista.*_2026\\.xlsx$", full.names = TRUE)
+
+# Ler cada arquivo extraindo os cabeçalhos dinamicamente das linhas 3 e 4
+lista_dfs <- lapply(arquivos_excel, function(x) {
+  # Lê apenas as linhas 3 e 4 para construir o cabeçalho (pula as 2 primeiras)
+  headers_raw <- read_excel(x, skip = 3, n_max = 2, col_names = FALSE)
+  
+  row3 <- as.character(headers_raw[1, ])
+  row4 <- as.character(headers_raw[2, ])
+  
+  # Coalesce: se a linha 4 for NA ou vazia, usa o valor da linha 3
+  col_names_clean <- ifelse(is.na(row4) | row4 == "", row3, row4)
+  
+  # Lê os dados pulando as 4 primeiras linhas, deixando o R atribuir nomes provisórios
+  df_data <- suppressMessages(read_excel(x, skip = 5, col_names = FALSE))
+  
+  # Pega o número real de colunas presentes nos dados
+  num_cols <- ncol(df_data)
+  
+  # Ajusta o tamanho de col_names_clean para combinar com os dados
+  if (length(col_names_clean) < num_cols) {
+    col_names_clean <- c(col_names_clean, paste0("Coluna_Extra_", (length(col_names_clean) + 1):num_cols))
+  } else if (length(col_names_clean) > num_cols) {
+    col_names_clean <- col_names_clean[1:num_cols]
+  }
+  
+  # Substitui os NAs por um texto genérico e força a exclusividade dos nomes
+  col_names_clean[is.na(col_names_clean)] <- "Sem_Nome"
+  colnames(df_data) <- make.names(col_names_clean, unique = TRUE)
+  
+  return(df_data)
+})
+
+# Realizar o merge de todas as tabelas
+# Assume-se que as tabelas compartilham colunas identificadoras como 'UF' e 'Município'
+df_final <- Reduce(function(x, y) merge(x, y, all = TRUE), lista_dfs)
+
+```
+
+
+```{r}
+df_final |>
+    select(Código.IBGE) |>
+    distinct() |>
+    summarise(n = n())
+    
+```
