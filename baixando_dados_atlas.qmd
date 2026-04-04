@@ -1,0 +1,78 @@
+---
+title: "Baixando Dados do Atlas de Desastres"
+format: html
+---
+
+## Download dos Dados do Atlas
+
+```{r setup, include=FALSE}
+library(here)
+library(dplyr)
+library(readxl)
+```
+
+```{r download-atlas}
+url_atlas <- "https://atlasdigital.mdr.gov.br/arquivos/BD_Atlas_1991_2024_v1.0_2025.04.14_Consolidado.xlsx"
+
+# Define a pasta de destino e cria caso não exista
+pasta_originais <- here("dados_originais")
+if(!dir.exists(pasta_originais)) {
+  dir.create(pasta_originais)
+}
+
+out_file <- file.path(pasta_originais, basename(url_atlas))
+
+# Realiza o download apenas se o arquivo ainda não existir no disco
+if(!file.exists(out_file)) {
+  download.file(url = url_atlas, destfile = out_file, mode = "wb")
+  message("Download concluído: ", basename(url_atlas))
+} else {
+  message("O arquivo já existe: ", basename(url_atlas))
+}
+```
+
+
+```{r}
+addb <- read_excel(out_file) 
+
+addb <- addb|>
+    select(Cod_IBGE_Mun, Nome_Municipio, Sigla_UF, regiao, Data_Evento, descricao_tipologia, DH_MORTOS)
+
+names(addb)
+```
+
+
+```{r}
+desastres_sum <- addb |>
+    mutate(Ano = substr(Data_Evento, 1, 4)) |>
+    group_by(Cod_IBGE_Mun, Ano) |>
+    summarise(
+    total_desastres = n(),
+    total_obitos = sum(as.numeric(DH_MORTOS), na.rm = TRUE),
+    ) |> 
+    ungroup() |>
+    tidyr::complete(
+      tidyr::nesting(Cod_IBGE_Mun),
+      Ano = as.character(min(as.numeric(Ano)):max(as.numeric(Ano))),
+      fill = list(total_desastres = 0, total_obitos = 0)
+    )
+
+```
+
+
+```{r}
+
+desastres_sum <- desastres_sum |>
+    arrange(Cod_IBGE_Mun, Ano) |>
+    group_by(Cod_IBGE_Mun) |>
+    mutate(
+      media_movel_desastres = slider::slide_index_dbl(total_desastres, as.numeric(Ano), sum, .before = 4),
+      media_movel_obitos = slider::slide_index_dbl(total_obitos, as.numeric(Ano), sum, .before = 4)
+    ) |>
+    ungroup()
+```
+
+
+```{r}
+saveRDS(desastres_sum, here("dados_tratados", "desastres.RDS"))
+```

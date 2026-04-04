@@ -1,0 +1,211 @@
+```{r}
+library(here)
+library(dplyr)
+```
+```{r}
+list_urls <- list("https://www.gov.br/mdr/pt-br/assuntos/protecao-e-defesa-civil/listaA_2026.xlsx", 
+    "https://www.gov.br/mdr/pt-br/assuntos/protecao-e-defesa-civil/listaB_2026.xlsx",
+    "https://www.gov.br/mdr/pt-br/assuntos/protecao-e-defesa-civil/listaC_2026.xlsx",
+    "https://www.gov.br/mdr/pt-br/assuntos/protecao-e-defesa-civil/listaD_2026.xlsx")
+
+# Criar pasta se não existir
+pasta_originais <- here("dados_originais")
+if(!dir.exists(pasta_originais)) {
+  dir.create(pasta_originais)
+}
+
+# Iterar sobre a lista para download
+for(link in list_urls) {
+  out_file <- file.path(pasta_originais, basename(link))
+  
+  if(!file.exists(out_file)) {
+    download.file(
+      url = link, 
+      destfile = out_file, 
+      mode = "wb"
+    )
+  }
+}
+
+
+```
+
+
+```{r}
+library(readxl)
+
+# Listar arquivos baixados
+arquivos_excel <- list.files(pasta_originais, pattern = "lista.*_2026\\.xlsx$", full.names = TRUE)
+
+# Ler cada arquivo extraindo os cabeçalhos dinamicamente das linhas 3 e 4
+lista_dfs <- lapply(arquivos_excel, function(x) {
+  # Lê apenas as linhas 3 e 4 para construir o cabeçalho (pula as 2 primeiras)
+  headers_raw <- read_excel(x, skip = 3, n_max = 2, col_names = FALSE)
+  
+  row3 <- as.character(headers_raw[1, ])
+  row4 <- as.character(headers_raw[2, ])
+  
+  # Coalesce: se a linha 4 for NA ou vazia, usa o valor da linha 3
+  col_names_clean <- ifelse(is.na(row4) | row4 == "", row3, row4)
+  
+  # Lê os dados pulando as 4 primeiras linhas, deixando o R atribuir nomes provisórios
+  df_data <- suppressMessages(read_excel(x, skip = 5, col_names = FALSE))
+  
+  # Pega o número real de colunas presentes nos dados
+  num_cols <- ncol(df_data)
+  
+  # Ajusta o tamanho de col_names_clean para combinar com os dados
+  if (length(col_names_clean) < num_cols) {
+    col_names_clean <- c(col_names_clean, paste0("Coluna_Extra_", (length(col_names_clean) + 1):num_cols))
+  } else if (length(col_names_clean) > num_cols) {
+    col_names_clean <- col_names_clean[1:num_cols]
+  }
+  
+  # Substitui os NAs por um texto genérico e força a exclusividade dos nomes
+  col_names_clean[is.na(col_names_clean)] <- "Sem_Nome"
+  colnames(df_data) <- make.names(col_names_clean, unique = TRUE)
+  
+  return(df_data)
+})
+
+# Realizar o merge de todas as tabelas
+# Assume-se que as tabelas compartilham colunas identificadoras como 'UF' e 'Município'
+df_final <- Reduce(function(x, y) merge(x, y, all = TRUE), lista_dfs)
+
+```
+
+
+```{r}
+df_final |>
+    select(Código.IBGE) |>
+    distinct() |>
+    summarise(n = n())
+    
+```
+
+
+```{r}
+# Verificar e selecionar linhas de df_final que possuem valores NA
+df_nas <- df_final |>
+    filter(if_any(everything(), is.na))
+
+# Visualizar a contagem de NAs por coluna
+colSums(is.na(df_final))
+
+# Exibir as primeiras linhas com NA
+head(df_nas)
+```
+
+### Renomeando os termos
+```{r}
+# Carregando o pacote para adicionar os rótulos originais como metadados
+library(labelled)
+
+df_final <- df_final |>
+  rename(
+    X1_ppa_defesa_civil = X1,
+    X2_plano_diretor_defesa_civil = X2,
+    X3_plano_reducao_riscos = X3,
+    X4_carta_sustentabilidade = X4,
+    X5_carta_geotecnica = X5,
+    X6_mapeamento_areas_risco = X6,
+    X7_cadastro_familias_risco = X7,
+    X8_plano_contingencia = X8,
+    X9_conselho_defesa_civil = X9,
+    X10_compdec = X10,
+    X11_loa_defesa_civil = X11,
+    X12_nupdec = X12,
+    X13_pessoas_capacitadas = X13,
+    X14_certificacao_sedec = X14,
+    X15_usuario_s2id = X15,
+    X16_fiscalizacao_areas_suscetiveis = X16,
+    X17_habitacao_interesse_social = X17,
+    X18_medidas_drenagem = X18,
+    X19_campanhas_educativas = X19,
+    X20_sistema_monitoramento_alerta = X20
+  ) |>
+  set_variable_labels(
+    X1_ppa_defesa_civil = "PPA Municipal incluindo Proteção e Defesa Civil",
+    X2_plano_diretor_defesa_civil = "Plano diretor aprovado por Lei Municipal incluindo Proteção e Defesa Civil",
+    X3_plano_reducao_riscos = "Plano Municipal de Redução de Riscos",
+    X4_carta_sustentabilidade = "Carta de Sustentabilidade ou documento equivalente de identificação de riscos de desastres",
+    X5_carta_geotecnica = "Carta Geotécnica de Aptidão à Urbanização",
+    X6_mapeamento_areas_risco = "Mapeamento de áreas de risco",
+    X7_cadastro_familias_risco = "Cadastro ou identificação de famílias em áreas de risco",
+    X8_plano_contingencia = "Plano de Contingência",
+    X9_conselho_defesa_civil = "Sistema Municipal ou conselho Municipal Intersetorial de Proteção e Defesa Civil",
+    X10_compdec = "Coordenação Municipal de Proteção e defesa Civil (Compdec)",
+    X11_loa_defesa_civil = "Dotação orçamentária (LOA) para proteção e Defesa Civil",
+    X12_nupdec = "Existência de Núcleos Comunitários de Proteção e Defesa Civil (Nupdec)",
+    X13_pessoas_capacitadas = "Número mínimo de pessoas capacitadas em Proteção e Defesa Civil",
+    X14_certificacao_sedec = "Pessoa certificada em pelo menos uma temática do Plano de Capacitação Continuada da Sedec",
+    X15_usuario_s2id = "Usuário habilitado no S2iD",
+    X16_fiscalizacao_areas_suscetiveis = "Controle e fiscalização para evitar a edificação em áreas suscetíveis, vistoriar edificações e áreas de risco",
+    X17_habitacao_interesse_social = "Programação de habitação de interesse social para reassentamento de famílias removidas de áreas de risco ou desabrigadas em função de desastres",
+    X18_medidas_drenagem = "Medidas de drenagem urbana necessárias à prevenção e mitigação de riscos de desastres",
+    X19_campanhas_educativas = "Campanhas ou atividades educativas para conscientização sobre riscos de desastres",
+    X20_sistema_monitoramento_alerta = "Sistema municipal de monitoramento e alerta antecipado"
+  )
+
+```
+
+## Salvando RDS
+
+```{r}
+pasta_tratados <- here("dados_tratados")
+
+if(!dir.exists(pasta_tratados)) {
+  dir.create(pasta_tratados)
+}
+
+saveRDS(df_final, here(pasta_tratados, "icm_2026.RDS"))
+```
+
+
+## Criando histogramas dos dados 
+
+```{r}
+pasta_graficos <- here("graficos")
+
+if(!dir.exists(pasta_graficos)) {
+  dir.create(pasta_graficos)
+}
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Identificar todas as colunas que começam com "X"
+colunas_x <- grep("^X", names(df_final), value = TRUE)
+
+# Loop iterando sobre cada uma dessas colunas
+for (coluna in colunas_x) {
+  
+  # Extrair a label original para usar como título
+  label_original <- attr(df_final[[coluna]], "label")
+  titulo_grafico <- ifelse(is.null(label_original), coluna, label_original)
+  
+  # Calcular a média agrupada por Região
+  df_resumo <- df_final |>
+    group_by(Região) |>
+    summarise(media = mean(.data[[coluna]], na.rm = TRUE), .groups = "drop")
+  
+  # Criar o gráfico de barras com as médias
+  p <- ggplot(df_resumo, aes(x = Região, y = media, fill = Região)) +
+    geom_col() + # geom_col usa o valor da variável y como a altura da barra
+    labs(
+      title = paste(strwrap(titulo_grafico, width = 80), collapse = "\n"),
+      x = "Região",
+      y = "Percentual de 'Sim'"
+    ) +
+    ylim(0,1.1)+
+    theme_linedraw() +
+    theme(legend.position = "none") # Remove a legenda pois o eixo x já mostra a região
+  
+  # Exportar o gráfico para a pasta_graficos
+  caminho_salvar <- here(pasta_graficos, paste0(coluna, ".png"))
+  ggsave(filename = caminho_salvar, plot = p, width = 10, height = 6, bg = "white")
+}
+
+```
