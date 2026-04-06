@@ -1,6 +1,6 @@
 ---
 title: "Tratamento de Dados da base MUNIC para pesquisa sobre capacidades e resposta climática"
-authors: "Luiz C Soares e Pedro Aquino
+authors: "Luiz C Soares e Pedro Aquino"
 ---
 
 # Configuração
@@ -31,11 +31,11 @@ library(ggplot2)
 ## Configuração de ambiente
 
 ```{r}
-create_project(".")
+'create_project(".")
 
 use_readme_md()
 
-use_gpl3_license()
+use_gpl3_license()'
 ```
 
 # Importando dados
@@ -132,7 +132,7 @@ munic_2013 <- munic_2013 |>
 ### 2017
 
 ```{r}
-munic_2017 <- read_ods(here(pasta_originais, "base.ods"), sheet = "Gestão de riscos")
+munic_2017 <- read_ods(here(pasta_originais, "Base_MUNIC_2017.ods"), sheet = "Gestão_de_risco")
 munic_2017 <- munic_2017 |>
     select(CodMun, MGRD171, MGRD172, MGRD173,
             MGRD174, MGRD175, MGRD176, MGRD177, 
@@ -171,10 +171,10 @@ munic_2017 <- munic_2017 |>
 ### 2020
 
 ```{r}
-munic_2020 <- read_ods(here(pasta_originais, "base.ods"), sheet = "Gestão de riscos")
+munic_2020 <- read_ods(here(pasta_originais, "Base_MUNIC_2020.ods"), sheet = "Gestão_de_riscos")
 munic_2020 <- munic_2020 |>
     select(CodMun, Mgrd171, Mgrd172, Mgrd173,
-            Mgrd174, Mgrd75, Mgrd176, Mgrd177, 
+            Mgrd174, Mgrd175, Mgrd176, Mgrd177, 
             Mgrd178, Mgrd181, Mgrd182, Mgrd183, 
             Mgrd184, Mgrd187, Mgrd201, Mgrd202,
             Mgrd203, Mgrd204, Mgrd206, Mgrd211, 
@@ -209,20 +209,157 @@ munic_2020 <- munic_2020 |>
 
 ## Juntar as três tabelas
 
+### Renomeando colunas e unindo
 ```{r}
+munic_2013 <- munic_2013 |>
+  mutate(ano = 2013) |>
+  rename(
+    codmun = A1,
+    pd_enchentes = A183,
+    lei_uso_solo_enchentes = A184,
+    lei_especifica_enchentes = A185,
+    pd_deslizamento = A186,
+    lei_uso_solo_deslizamento = A187,
+    lei_especifica_deslizamento = A188,
+    plano_reducao_risco = A189,
+    carta_geotecnica = A190,
+    mapeamento_enchentes = A196,
+    habitacao_enchentes = A197,
+    controle_ocupacao_enchentes = A198,
+    plano_contingencia_enchentes = A199,
+    cadastro_risco = A202,
+    mapeamento_deslizamento = A206,
+    habitacao_deslizamento = A207,
+    controle_ocupacao_deslizamento = A208,
+    plano_contingencia_deslizamento = A209,
+    alerta_deslizamento = A211,
+    bombeiros = A220,
+    defesa_civil = A221,
+    nucleos_defesa_civil = A225
+  )
 
+munic_2017 <- munic_2017 |>
+  mutate(ano = 2017) |>
+  rename(
+    codmun = CodMun,
+    pd_enchentes = MGRD171,
+    lei_uso_solo_enchentes = MGRD172,
+    lei_especifica_enchentes = MGRD173,
+    pd_deslizamento = MGRD174,
+    lei_uso_solo_deslizamento = MGRD175,
+    lei_especifica_deslizamento = MGRD176,
+    plano_reducao_risco = MGRD177,
+    carta_geotecnica = MGRD178,
+    mapeamento_enchentes = MGRD181,
+    habitacao_enchentes = MGRD182,
+    controle_ocupacao_enchentes = MGRD183,
+    plano_contingencia_enchentes = MGRD184,
+    cadastro_risco = MGRD187,
+    mapeamento_deslizamento = MGRD191,
+    habitacao_deslizamento = MGRD192,
+    controle_ocupacao_deslizamento = MGRD193,
+    plano_contingencia_deslizamento = MGRD194,
+    alerta_deslizamento = MGRD196,
+    bombeiros = MGRD201,
+    defesa_civil = MGRD202,
+    nucleos_defesa_civil = MGRD203
+  )
+
+munic_2020 <- munic_2020 |>
+  mutate(ano = 2020) |>
+  rename(
+    codmun = CodMun,
+    pd_enchentes = Mgrd171,
+    lei_uso_solo_enchentes = Mgrd172,
+    lei_especifica_enchentes = Mgrd173,
+    pd_deslizamento = Mgrd174,
+    lei_uso_solo_deslizamento = Mgrd175,
+    lei_especifica_deslizamento = Mgrd176,
+    plano_reducao_risco = Mgrd177,
+    carta_geotecnica = Mgrd178,
+    mapeamento_enchentes = Mgrd181,
+    habitacao_enchentes = Mgrd182,
+    controle_ocupacao_enchentes = Mgrd183,
+    plano_contingencia_enchentes = Mgrd184,
+    cadastro_risco = Mgrd187,
+    mapeamento_deslizamento = Mgrd201,
+    habitacao_deslizamento = Mgrd202,
+    controle_ocupacao_deslizamento = Mgrd203,
+    plano_contingencia_deslizamento = Mgrd204,
+    alerta_deslizamento = Mgrd206,
+    bombeiros = Mgrd211,
+    defesa_civil = Mgrd212,
+    nucleos_defesa_civil = Mgrd213
+  )
+
+# Unindo os 3 dataframes
+munic_total <- bind_rows(munic_2013, munic_2017, munic_2020)
+
+# Padronizando os labels das colunas na base unificada utilizando as perguntas da versão de 2020
+var_label(munic_total) <- var_label(munic_2020)
 ```
+
+
+## Sumarizando as colunas
+
+```{r}
+munic_total |> 
+  select(-codmun) |> 
+  map(unique)
+
+saveRDS(munic_total, here("dados_tratados", "munic_2013_17_20.RDS"))
+  ```
 
 # Gráficos descritivos
 
 ```{r}
-munic_2013 |>
-    group_by(A220) |>
-    summarise(Ocorrencias = n()) |>
-    ggplot(
-        aes(x = A220, y = Ocorrencias))+
-        geom_col()+
-        theme_bw()
-```
+#install.packages("paletteer")
+library(paletteer)
+# Identificar todas as colunas para 
+colunas_x <- munic_total |> 
+  select(-codmun, -ano) |>
+  names() 
+  
+# Definir e criar a pasta para salvar os gráficos
+pasta_graficos <- "graficos"
+if (!dir.exists(here(pasta_graficos))) {
+  dir.create(here(pasta_graficos))
+}
 
-# Análise
+# Loop iterando sobre cada uma dessas colunas
+for (coluna in colunas_x) {
+  
+  # Extrair a label original para usar como título
+  label_original <- attr(munic_total[[coluna]], "label")
+  titulo_grafico <- ifelse(is.null(label_original), coluna, label_original)
+  
+  # Calcular a média agrupada por Região
+  df_resumo <- munic_total |>
+    select(all_of(coluna), ano) |>
+    group_by(ano, .data[[coluna]]) |>
+    summarise(n = n(), .groups = "drop") |>
+    group_by(ano) |>
+    mutate(pct = n / sum(n)) |>
+    mutate(across(all_of(coluna), ~ ifelse(.x %in% c("Sim", "Não"), .x, "Outros")))
+  
+  # Criar o gráfico de barras com os percentuais por ano
+  p <- df_resumo |> 
+    ggplot(aes(x = factor(.data[[coluna]], levels = c("Sim", "Não", "Outros")), y = pct, fill = factor(ano))) +
+    geom_col(position = "dodge") +
+    scale_y_continuous(labels = scales::percent, limits = c(0, 1.1)) +
+     paletteer::scale_fill_paletteer_d("colorBlindness::Blue2DarkOrange12Steps") +
+    labs(
+        title = paste(strwrap(titulo_grafico, width = 80), collapse = "\n"),
+        x = "Resposta",
+        y = "Percentual",
+        fill = "Ano",
+        caption = "Fonte: Pesquisas MUNIC, 2013,2017,2020"
+    )+
+    theme_linedraw() +
+    theme(legend.position = "bottom")
+  
+  # Exportar o gráfico para a pasta_graficos
+  caminho_salvar <- here(pasta_graficos, paste0(coluna, ".png"))
+  ggsave(filename = caminho_salvar, plot = p, width = 10, height = 6, bg = "white")
+}
+```

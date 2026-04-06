@@ -162,7 +162,7 @@ saveRDS(df_final, here(pasta_tratados, "icm_2026.RDS"))
 ```
 
 
-## Criando histogramas dos dados 
+## Criando gráfico dos dados 
 
 ```{r}
 pasta_graficos <- here("graficos")
@@ -197,7 +197,8 @@ for (coluna in colunas_x) {
     labs(
       title = paste(strwrap(titulo_grafico, width = 80), collapse = "\n"),
       x = "Região",
-      y = "Percentual de 'Sim'"
+      y = "Percentual de 'Sim'",
+      caption = "Fonte: Índice de Capacidades Municipais - Março 2026"
     ) +
     ylim(0,1.1)+
     theme_linedraw() +
