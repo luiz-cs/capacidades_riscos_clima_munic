@@ -1,0 +1,126 @@
+---
+title: "Junção de Dados - Código IBGE"
+format: html
+editor: visual
+---
+
+```{r}
+#| label: setup
+#| message: false
+
+library(here)
+library(tidyverse)
+library(fs)
+```
+
+## Importação dos Dados
+
+Primeiro, listamos e importamos todos os arquivos `.rds` da pasta `dados_tratados`. Os arquivos são armazenados em uma lista nomeada para facilitar o rastreamento.
+
+```{r}
+#| label: importar-dados
+
+caminho_pasta <- "dados_tratados"
+
+arquivos_rds <- dir_ls(caminho_pasta, glob = "*.RDS")
+
+lista_dados <- map(arquivos_rds, readRDS)
+names(lista_dados) <- path_file(arquivos_rds)
+```
+
+## Verificação das Colunas
+
+Inspecionamos os nomes das colunas de cada base para identificar as variáveis equivalentes e, principalmente, como a coluna do Código IBGE está nomeada em cada arquivo.
+
+```{r}
+#| label: verificar-colunas
+
+# Retorna uma lista com os nomes das colunas de cada data frame
+map(lista_dados, colnames)
+```
+
+## Padronização e Junção
+
+Com base na verificação acima, padronizamos o nome da chave de junção para `codigo_ibge`. A função `rename(any_of())` é bastante segura e elegante do Tidyverse: ela tenta renomear as colunas especificadas no vetor, mas ignora silenciosamente se o nome original não existir no *data frame* atual.
+
+```{r}
+#| label: juntar-dados
+
+padronizar_colunas <- function(df) {
+  df |>
+    select(-any_of("Código.UF")) |>
+    rename(any_of(c(
+      codigo_ibge = "Cod_IBGE_Mun",
+      codigo_ibge = "Código.IBGE",
+      codigo_ibge = "codmun",
+      ano = "Ano"
+    ))) |>
+    mutate(
+      across(any_of(c("codigo_ibge", "ano")), as.numeric)
+    )
+}
+
+dados_finais <- lista_dados |>
+  map(padronizar_colunas) |>
+  reduce(full_join) |>
+  filter(ano >= 2008)
+
+glimpse(dados_finais)
+```
+
+## Tratamento de NAs
+
+Identificamos que algumas colunas importantes possuem valores ausentes (NAs) em várias linhas. Para resolver isso, criaremos tabelas de lookup para as colunas `UF`, `Município`, `Faixa.Populacional` e `Região`, e usaremos essas tabelas para preencher os NAs na tabela principal.
+
+```{r}
+# Criar tabelas de lookup para cada coluna
+lookup_uf <- dados_finais |>
+  select(codigo_ibge, UF) |>
+  filter(!is.na(UF)) |>
+  distinct(codigo_ibge, .keep_all = TRUE)
+
+lookup_municipio <- dados_finais |>
+  select(codigo_ibge, Município) |>
+  filter(!is.na(Município)) |>
+  distinct(codigo_ibge, .keep_all = TRUE)
+
+lookup_faixa <- dados_finais |>
+  select(codigo_ibge, Faixa.Populacional) |>
+  filter(!is.na(Faixa.Populacional)) |>
+  distinct(codigo_ibge, .keep_all = TRUE)
+
+lookup_regiao <- dados_finais |>
+  select(codigo_ibge, Região) |>
+  filter(!is.na(Região)) |>
+  distinct(codigo_ibge, .keep_all = TRUE)
+
+# Preencher NAs usando left_join
+dados_finais <- dados_finais |>
+  left_join(lookup_uf, by = "codigo_ibge", suffix = c("", "_fill")) |>
+  mutate(UF = coalesce(UF, UF_fill)) |>
+  select(-UF_fill) |>
+  left_join(lookup_municipio, by = "codigo_ibge", suffix = c("", "_fill")) |>
+  mutate(Município = coalesce(Município, Município_fill)) |>
+  select(-Município_fill) |>
+  left_join(lookup_faixa, by = "codigo_ibge", suffix = c("", "_fill")) |>
+  mutate(Faixa.Populacional = coalesce(Faixa.Populacional, Faixa.Populacional_fill)) |>
+  select(-Faixa.Populacional_fill) |>
+  left_join(lookup_regiao, by = "codigo_ibge", suffix = c("", "_fill")) |>
+  mutate(Região = coalesce(Região, Região_fill)) |>
+  select(-Região_fill)
+```
+
+
+A seguir, verificaremos se há colunas com muitos NAs, que podem indicar problemas de incorporação entre bases de dados. 
+```{r}
+dados_finais |>
+  summarise(across(everything(), ~ sum(is.na(.)))) |>
+  pivot_longer(everything(), names_to = "coluna", values_to = "n_na") |>
+  arrange(desc(n_na)) |>
+  View()
+```
+
+
+```{r}
+
+```
