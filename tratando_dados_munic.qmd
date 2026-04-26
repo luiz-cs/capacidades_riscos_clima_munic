@@ -306,9 +306,24 @@ var_label(munic_total) <- var_label(munic_2020)
 munic_total |> 
   select(-codmun) |> 
   map(unique)
+  ```
+
+
+# Transformando variável em booleana
+
+```{r}
+munic_total <- readRDS(here("dados_tratados", "munic_2013_17_20.RDS"))
+
+munic_total <- munic_total |>
+  mutate(across(-c(codmun, ano), ~ case_when(
+    .x == "Sim" ~ 1,
+    .x == "Não" ~ 0,
+    TRUE ~ NA
+  )))
+
 
 saveRDS(munic_total, here("dados_tratados", "munic_2013_17_20.RDS"))
-  ```
+```
 
 # Gráficos descritivos
 

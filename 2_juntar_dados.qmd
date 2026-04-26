@@ -39,6 +39,80 @@ Inspecionamos os nomes das colunas de cada base para identificar as variáveis e
 map(lista_dados, colnames)
 ```
 
+## Corrigindo bases de dados
+
+```{r}
+lista_dados$desastres.RDS <- lista_dados$desastres.RDS |>
+  filter(Ano %in% c(2013, 2017, 2020, 2025))
+
+lista_dados$icm_2026.RDS  <- lista_dados$icm_2026.RDS |>
+  mutate(ano = 2026)
+
+```
+
+```{r}
+colunas_icm <- lista_dados$icm_2026.RDS |>
+  select(starts_with("X")) |>
+  colnames()
+ 
+
+# Criar as novas colunas mapeando as correspondências da MUNIC para ICM
+
+munic <- lista_dados$munic_2013_17_20.RDS
+
+munic <- munic |>
+  # X2: Plano diretor aprovado por Lei Municipal incluindo Proteção e Defesa Civil
+  mutate(X2_plano_diretor_defesa_civil = if_else(
+    (pd_enchentes == 1 | pd_deslizamento == 1), 1, 0, missing = 0
+  )) |>
+  # X3: Plano Municipal de Redução de Riscos
+  mutate(X3_plano_reducao_riscos = plano_reducao_risco) |>
+  # X5: Carta Geotécnica de Aptidão à Urbanização
+  mutate(X5_carta_geotecnica = carta_geotecnica) |>
+  # X6: Mapeamento de áreas de risco
+  mutate(X6_mapeamento_areas_risco = if_else(
+    (mapeamento_enchentes == 1 | mapeamento_deslizamento == 1), 1, 0, missing = 0
+  )) |>
+  # X7: Cadastro ou identificação de famílias em áreas de risco
+  mutate(X7_cadastro_familias_risco = cadastro_risco) |>
+  # X8: Plano de Contingência
+  mutate(X8_plano_contingencia = if_else(
+    (plano_contingencia_enchentes == 1 | plano_contingencia_deslizamento == 1), 1, 0, missing = 0
+  )) |>
+  # X10: Coordenação Municipal de Proteção e defesa Civil (Compdec)
+  mutate(X10_compdec = defesa_civil) |>
+  # X12: Existência de Núcleos Comunitários de Proteção e Defesa Civil (Nupdec)
+  mutate(X12_nupdec = nucleos_defesa_civil) |>
+  # X16: Controle e fiscalização para evitar a edificação em áreas suscetíveis
+  mutate(X16_fiscalizacao_areas_suscetiveis = if_else(
+    (controle_ocupacao_enchentes == 1 | controle_ocupacao_deslizamento == 1), 1, 0, missing = 0
+  )) |>
+  # X17: Programação de habitação de interesse social
+  mutate(X17_habitacao_interesse_social = if_else(
+    (habitacao_enchentes == 1 | habitacao_deslizamento == 1), 1, 0, missing = 0
+  )) |>
+  # X20: Sistema municipal de monitoramento e alerta antecipado
+  mutate(X20_sistema_monitoramento_alerta = alerta_deslizamento)
+
+# Atualizar a lista
+lista_dados$munic_2013_17_20.RDS <- munic |>
+  select(-c(
+    pd_enchentes, pd_deslizamento, plano_reducao_risco, carta_geotecnica,
+    mapeamento_enchentes, mapeamento_deslizamento, cadastro_risco,
+    plano_contingencia_enchentes, plano_contingencia_deslizamento,
+    defesa_civil, nucleos_defesa_civil,
+    controle_ocupacao_enchentes, controle_ocupacao_deslizamento,
+    habitacao_enchentes, habitacao_deslizamento,
+    alerta_deslizamento
+  ))
+
+# Verificar as novas colunas
+munic |>
+  select(starts_with("X")) |>
+  glimpse()
+```
+
+
 ## Padronização e Junção
 
 Com base na verificação acima, padronizamos o nome da chave de junção para `codigo_ibge`. A função `rename(any_of())` é bastante segura e elegante do Tidyverse: ela tenta renomear as colunas especificadas no vetor, mas ignora silenciosamente se o nome original não existir no *data frame* atual.
@@ -56,16 +130,55 @@ padronizar_colunas <- function(df) {
       ano = "Ano"
     ))) |>
     mutate(
-      across(any_of(c("codigo_ibge", "ano")), as.numeric)
+      codigo_ibge = substr(as.character(codigo_ibge), 1, 6),
+      ano = as.numeric(ano)
     )
 }
 
+# Get all column names that start with "X"
+join_cols <- colnames(munic) |>
+  keep(~str_starts(., "X"))
+
+# Join on codigo_ibge, ano, and coalesce duplicate X columns dynamically
 dados_finais <- lista_dados |>
   map(padronizar_colunas) |>
-  reduce(full_join) |>
-  filter(ano >= 2008)
+  reduce(function(x, y) {
+    # Join the two data frames in the current iteration
+    joined_df <- full_join(x, y, by = c("codigo_ibge", "ano"))
+    
+    # Find which join_cols are present in both data frames
+    colunas_comuns <- intersect(intersect(colnames(x), colnames(y)), join_cols)
+    
+    # Coalesce the .x and .y columns back into a single column
+    for (col in colunas_comuns) {
+      col_x <- paste0(col, ".x")
+      col_y <- paste0(col, ".y")
+      
+      joined_df <- joined_df |>
+        mutate("{col}" := coalesce(.data[[col_x]], .data[[col_y]])) |>
+        select(-all_of(c(col_x, col_y)))
+    }
+    
+    return(joined_df)
+  })
 
-glimpse(dados_finais)
+dados_finais <- dados_finais |>
+  select("codigo_ibge", "ano",
+     "UF", "Município", "Faixa.Populacional", "Região",  
+     "X2_plano_diretor_defesa_civil",
+     "X3_plano_reducao_riscos",
+     "X5_carta_geotecnica",
+     "X6_mapeamento_areas_risco",
+     "X7_cadastro_familias_risco",
+     "X8_plano_contingencia",
+     "X10_compdec",
+     "X12_nupdec",
+     "X16_fiscalizacao_areas_suscetiveis",
+     "X17_habitacao_interesse_social",
+     "X20_sistema_monitoramento_alerta",
+     "media_movel_desastres", "media_movel_obitos"                
+ ) |>
+  arrange(codigo_ibge, ano)
 ```
 
 ## Tratamento de NAs
@@ -120,7 +233,68 @@ dados_finais |>
   View()
 ```
 
+## Adicionando as labels
 
 ```{r}
+dados_finais <- dados_finais |>
+  labelled::set_variable_labels(
+    X2_plano_diretor_defesa_civil = "Plano diretor aprovado por Lei Municipal incluindo Proteção e Defesa Civil",
+    X3_plano_reducao_riscos = "Plano Municipal de Redução de Riscos",
+    X5_carta_geotecnica = "Carta Geotécnica de Aptidão à Urbanização",
+    X6_mapeamento_areas_risco = "Mapeamento de áreas de risco",
+    X7_cadastro_familias_risco = "Cadastro ou identificação de famílias em áreas de risco",
+    X8_plano_contingencia = "Plano de Contingência",
+    X10_compdec = "Coordenação Municipal de Proteção e defesa Civil (Compdec)",
+    X12_nupdec = "Existência de Núcleos Comunitários de Proteção e Defesa Civil (Nupdec)",
+    X16_fiscalizacao_areas_suscetiveis = "Controle e fiscalização para evitar a edificação em áreas suscetíveis, vistoriar edificações e áreas de risco",
+    X17_habitacao_interesse_social = "Programação de habitação de interesse social para reassentamento de famílias removidas de áreas de risco ou desabrigadas em função de desastres",
+    X20_sistema_monitoramento_alerta = "Sistema municipal de monitoramento e alerta antecipado",
+    media_movel_desastres = "Média móvel de desastres",
+    media_movel_obitos = "Média móvel de óbitos"
+  )
+```
 
+## Salvar a base final
+
+```{r}
+saveRDS(dados_finais, here("dados_tratados/base_sintese.RDS"))
+```
+
+
+# Gráficos
+
+## Heatmap da co-ocorrência de variáveis de interesse
+
+```{r}
+library(ggplot2)
+
+# Selecionar as variáveis
+dados_plot <- dados_finais |>
+  select(starts_with("X"), media_movel_desastres, media_movel_obitos)
+
+# Substituir os nomes das colunas pelos rótulos e adicionar quebra de linha para não desconfigurar o gráfico
+colnames(dados_plot) <- map_chr(colnames(dados_plot), ~ {
+  rotulo <- attr(dados_plot[[.x]], "label")
+  texto <- if (is.null(rotulo)) .x else rotulo
+  str_wrap(texto, width = 45) # Quebra em múltiplas linhas
+})
+
+# Calcular a matriz de correlação e transformar para o formato longo
+matriz_cor <- dados_plot |>
+  cor(use = "pairwise.complete.obs") |>
+  as.data.frame() |>
+  rownames_to_column(var = "var1") |>
+  pivot_longer(cols = -var1, names_to = "var2", values_to = "correlacao")
+
+# Criar o heatmap com geom_tile
+ggplot(matriz_cor, aes(x = var1, y = var2, fill = correlacao)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(correlacao, 2)), size = 3) +
+  scale_fill_gradient2(low = "#4575b4", mid = "white", high = "#d73027", midpoint = 0, limits = c(-1, 1)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8),
+        axis.text.y = element_text(size = 8)) +
+  labs(title = "Correlação entre Variáveis de Interesse", x = NULL, y = NULL, fill = "Correlação")
+
+ggsave(here("graficos/heatmap_correlacao.png"), width = 10, height = 8)
 ```
