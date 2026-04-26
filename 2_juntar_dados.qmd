@@ -298,3 +298,35 @@ ggplot(matriz_cor, aes(x = var1, y = var2, fill = correlacao)) +
 
 ggsave(here("graficos/heatmap_correlacao.png"), width = 10, height = 8)
 ```
+
+## Gráfico de percentual de municípios com cada medida de proteção, por ano e região
+
+```{r}
+# Extrair os rótulos das variáveis e preparar vetor nomeado para substituição
+nomes_x <- dados_finais |> select(starts_with("X")) |> names()
+rotulos_medidas <- map_chr(nomes_x, ~ {
+  rotulo <- attr(dados_finais[[.x]], "label")
+  texto <- if (is.null(rotulo)) .x else rotulo
+  str_wrap(texto, width = 35) # Quebra de linha para não alargar muito a margem esquerda
+})
+names(rotulos_medidas) <- nomes_x
+
+dados_resumidos <- dados_finais |>
+  group_by(ano, Região) |>
+  mutate(across(starts_with("X"), ~ if_else(.x == 1, 1, 0))) |>
+  summarise(across(starts_with("X"), ~ mean(.x, na.rm = TRUE) * 100), .groups = "drop") |>
+  pivot_longer(cols = starts_with("X"), names_to = "medida", values_to = "percentual") |>
+  filter(!is.na(percentual)) |>
+  mutate(medida = rotulos_medidas[medida]) # Substitui o nome da coluna pela sua label
+
+ggplot(dados_resumidos, aes(x = as.character(ano), y = percentual, fill = Região)) +
+  geom_col() +
+  theme_bw() +
+  labs(title = "Percentual de Municípios com Medidas de Proteção por Ano e Região", x = "Ano", y = "Percentual (%)", fill = "Região") +
+  facet_grid(medida ~ Região, space = "free", switch = "y") +
+  theme(strip.text.y.left = element_text(angle = 0, hjust = 1, size = 8),
+        strip.placement = "outside",
+        legend.position = "none")
+
+ggsave(here("graficos/percentual_medidas_protecao.png"), width = 12, height = 12)
+```
