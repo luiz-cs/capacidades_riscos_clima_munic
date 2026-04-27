@@ -266,6 +266,9 @@ saveRDS(dados_finais, here("dados_tratados/base_sintese.RDS"))
 ## Heatmap da co-ocorrência de variáveis de interesse
 
 ```{r}
+dados_finais <- readRDS(here("dados_tratados/base_sintese.RDS"))
+```
+```{r}
 library(ggplot2)
 
 # Selecionar as variáveis
@@ -329,4 +332,100 @@ ggplot(dados_resumidos, aes(x = as.character(ano), y = percentual, fill = Regiã
         legend.position = "none")
 
 ggsave(here("graficos/percentual_medidas_protecao.png"), width = 12, height = 12)
+```
+
+
+```{r}
+# Extrair os rótulos das variáveis e preparar vetor nomeado para substituição
+nomes_x <- dados_finais |> select(starts_with("X")) |> names()
+rotulos_medidas <- map_chr(nomes_x, ~ {
+  rotulo <- attr(dados_finais[[.x]], "label")
+  texto <- if (is.null(rotulo)) .x else rotulo
+  str_wrap(texto, width = 35) # Quebra de linha para não alargar muito a margem esquerda
+})
+names(rotulos_medidas) <- nomes_x
+
+dados_resumidos <- dados_finais |>
+  group_by(ano, Faixa.Populacional) |>
+  mutate(across(starts_with("X"), ~ if_else(.x == 1, 1, 0))) |>
+  summarise(across(starts_with("X"), ~ mean(.x, na.rm = TRUE) * 100), .groups = "drop") |>
+  pivot_longer(cols = starts_with("X"), names_to = "medida", values_to = "percentual") |>
+  filter(!is.na(percentual)) |>
+  mutate(medida = rotulos_medidas[medida]) # Substitui o nome da coluna pela sua label
+
+ggplot(dados_resumidos, aes(x = as.character(ano), y = percentual, fill = Faixa.Populacional)) +
+  geom_col() +
+  theme_bw() +
+  labs(title = "Percentual de Municípios com Medidas de Proteção por Ano e Faixa.Populacional", x = "Ano", y = "Percentual (%)", fill = "Faixa.Populacional") +
+  facet_grid(medida ~ Faixa.Populacional, space = "free", switch = "y") +
+  theme(strip.text.y.left = element_text(angle = 0, hjust = 1, size = 8),
+        strip.placement = "outside",
+        legend.position = "none")
+
+ggsave(here("graficos/percentual_medidas_populacao.png"), width = 12, height = 12)
+```
+
+
+```{r}
+# Extrair os rótulos das variáveis e preparar vetor nomeado para substituição
+nomes_x <- dados_finais |> select(starts_with("X")) |> names()
+rotulos_medidas <- map_chr(nomes_x, ~ {
+  rotulo <- attr(dados_finais[[.x]], "label")
+  texto <- if (is.null(rotulo)) .x else rotulo
+  str_wrap(texto, width = 35) # Quebra de linha para não alargar as facetas
+})
+names(rotulos_medidas) <- nomes_x
+
+dados_dispersao <- dados_finais |>
+  group_by(ano, Região) |>
+  mutate(across(starts_with("X"), ~ ifelse(is.na(.x), 1, 0)),
+         media_movel_desastres = ifelse(is.na(media_movel_desastres), 0, media_movel_desastres)) |>
+  summarise(
+    across(starts_with("X"), ~ mean(.x == 1, na.rm = FALSE) * 100),
+    media_movel_desastres = mean(media_movel_desastres, na.rm = FALSE),
+    .groups = "drop"
+  ) |>
+  pivot_longer(cols = starts_with("X"), names_to = "medida", values_to = "percentual") |>
+  filter(!is.na(Região)) |>
+  mutate(medida = rotulos_medidas[medida])
+
+ggplot(dados_dispersao, aes(x = percentual, y = media_movel_desastres, color = Região)) +
+  geom_point(size = 2) +
+  geom_text(aes(label = ano), vjust = 1.5, size = 3, show.legend = FALSE) +
+  facet_wrap(~ medida) +
+  theme_bw() +
+  labs(title = "Relação entre Medidas de Proteção e Desastres Naturais", x = "Percentual de Municípios com a Medida na Região (%)", y = "Média Móvel de Desastres (Região)", color = "Região") +
+  theme(strip.text = element_text(size = 8))
+
+ggsave(here("graficos/dispersao_medidas_desastres.png"), width = 14, height = 12)
+```
+
+
+```{r}
+# Prepara os dados calculando a média de medidas X adotadas por cada município
+dados_dispersao2 <- dados_finais |>
+  rowwise() |>
+  mutate(
+    # Calcula o percentual de ocorrências "1" entre as colunas X para a linha atual
+    media_medidas_x = mean(c_across(starts_with("X")) == 1, na.rm = TRUE) * 100
+  ) |>
+  ungroup() |>
+  filter(!is.na(media_movel_desastres), !is.na(Região), !is.na(Faixa.Populacional))
+
+ggplot(dados_dispersao2, aes(y = media_medidas_x, x = media_movel_desastres, color = Região, size = Faixa.Populacional)) +
+  geom_point() +
+  facet_grid(Região ~ ano) +
+  # Escala com paleta plasma do pacote viridis
+  scale_x_continuous(trans = "log1p") + # Usa log1p para evitar a exclusão de valores zerados 
+  theme_bw() +
+  labs(
+    title = "Relação entre a Média de Medidas Adotadas e Desastres por Região",
+    y = "Média de Medidas de Proteção Adotadas (%)",
+    x = "Média Móvel de Desastres (escala log)",
+    color = "Região",
+    size = "Faixa Populacional"
+  )+
+    theme(legend.position = "bottom")
+
+ggsave(here("graficos/dispersao_media_medidas_municipios.png"), width = 12, height = 8)
 ```
