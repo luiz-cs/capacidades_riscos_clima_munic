@@ -1,0 +1,81 @@
+---
+title: "Download e Tratamento de Dados - Censo IBGE"
+format: html
+editor: visual
+---
+
+## Configuração Inicial
+
+```{r}
+#| label: setup
+#| message: false
+
+library(here)
+library(tidyverse)
+library(fs)
+library(rvest)
+library(readODS)
+```
+
+## Criar pasta de destino
+
+Vamos garantir que a pasta `dados_originais` exista no projeto antes de fazermos os downloads.
+
+```{r}
+#| label: criar-diretorios
+
+pasta_destino <- here("dados_originais/Censo")
+dir_create(pasta_destino)
+dir_create(path(pasta_destino, "2010")) 
+dir_create(path(pasta_destino, "2022"))
+```
+
+## Download dos Dados do FTP do IBGE
+
+Abaixo estão as URLs de acesso aos servidores FTP do IBGE. 
+*Nota: Os links abaixo são ilustrativos. O IBGE frequentemente atualiza as pastas do FTP e distribui os dados em arquivos .zip por Estado.*
+
+```{r}
+#| label: download-ftp-ibge
+#| eval: false
+
+# Definir as URLs do FTP do IBGE (Substitua pelas URLs exatas dos arquivos agregados quando mapeadas)
+url_censo_2010 <- "https://ftp.ibge.gov.br/Censos/Censo_Demografico_2010/Resultados_do_Universo/ods/Municipios/"
+url_censo_2022 <- "https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios/Agregados_por_Municipio_csv/"
+
+# Função para listar links de uma pasta e baixar os arquivos
+baixar_arquivos_pasta <- function(url_base, pasta_saida) {
+  links <- read_html(url_base) |> 
+    html_elements("a") |> 
+    html_attr("href")
+  
+  arquivos <- links[grepl("\\.(csv|ods|zip)$", links, ignore.case = TRUE)]
+  
+  for (arq in arquivos) {
+    url_arquivo <- paste0(url_base, arq)
+    dest_arquivo <- path(pasta_saida, arq)
+      download.file(url_arquivo, destfile = dest_arquivo, mode = "wb", quiet = TRUE)
+      
+      # Descompactar caso seja arquivo zip
+      if (grepl("\\.zip$", dest_arquivo, ignore.case = TRUE)) {
+        unzip(dest_arquivo, exdir = pasta_saida)
+      }
+  }
+  
+  # Listar todos os arquivos na pasta e filtrar os que não são .zip
+  arquivos_finais <- dir_ls(pasta_saida, type = "file")
+  arquivos_finais <- arquivos_finais[!grepl("\\.zip$", arquivos_finais, ignore.case = TRUE)]
+  
+  return(arquivos_finais)
+}
+
+# Executar a iteração e guardar a lista de arquivos extraídos
+arquivos_2010 <- baixar_arquivos_pasta(url_censo_2010, path(pasta_destino, "2010"))
+arquivos_2022 <- baixar_arquivos_pasta(url_censo_2022, path(pasta_destino, "2022"))
+```
+
+## Juntando as bases originais
+
+```{r}
+
+```

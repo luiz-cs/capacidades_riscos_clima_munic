@@ -1,7 +1,6 @@
 ---
 title: "Junção de Dados - Código IBGE"
 format: html
-editor: visual
 ---
 
 ```{r}
@@ -111,7 +110,6 @@ munic |>
   select(starts_with("X")) |>
   glimpse()
 ```
-
 
 ## Padronização e Junção
 
@@ -223,8 +221,8 @@ dados_finais <- dados_finais |>
   select(-Região_fill)
 ```
 
+A seguir, verificaremos se há colunas com muitos NAs, que podem indicar problemas de incorporação entre bases de dados.
 
-A seguir, verificaremos se há colunas com muitos NAs, que podem indicar problemas de incorporação entre bases de dados. 
 ```{r}
 dados_finais |>
   summarise(across(everything(), ~ sum(is.na(.)))) |>
@@ -258,16 +256,22 @@ dados_finais <- dados_finais |>
 
 ```{r}
 saveRDS(dados_finais, here("dados_tratados/base_sintese.RDS"))
+dados_finais <- readRDS(here("dados_tratados/base_sintese.RDS"))
+
 ```
 
+## Adicionando dados socioeconômicos
+
+```{r}
+dados_socioeconomicos <- lista_dados$`dados_tratados/dados_socioeconomicos.RDS`
+
+
+```
 
 # Gráficos
 
 ## Heatmap da co-ocorrência de variáveis de interesse
 
-```{r}
-dados_finais <- readRDS(here("dados_tratados/base_sintese.RDS"))
-```
 ```{r}
 library(ggplot2)
 
@@ -334,7 +338,6 @@ ggplot(dados_resumidos, aes(x = as.character(ano), y = percentual, fill = Regiã
 ggsave(here("graficos/percentual_medidas_protecao.png"), width = 12, height = 12)
 ```
 
-
 ```{r}
 # Extrair os rótulos das variáveis e preparar vetor nomeado para substituição
 nomes_x <- dados_finais |> select(starts_with("X")) |> names()
@@ -364,7 +367,6 @@ ggplot(dados_resumidos, aes(x = as.character(ano), y = percentual, fill = Faixa.
 
 ggsave(here("graficos/percentual_medidas_populacao.png"), width = 12, height = 12)
 ```
-
 
 ```{r}
 # Extrair os rótulos das variáveis e preparar vetor nomeado para substituição
@@ -399,7 +401,6 @@ ggplot(dados_dispersao, aes(x = percentual, y = media_movel_desastres, color = R
 
 ggsave(here("graficos/dispersao_medidas_desastres.png"), width = 14, height = 12)
 ```
-
 
 ```{r}
 # Prepara os dados calculando a média de medidas X adotadas por cada município

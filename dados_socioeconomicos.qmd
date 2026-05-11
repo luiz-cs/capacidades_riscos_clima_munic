@@ -1,0 +1,134 @@
+
+
+```{r}
+library(here)
+library(tidyr)
+library(dplyr)
+```
+
+## Tratando dados IPEAData
+https://www.ipeadata.gov.br/Default.aspx
+```{r}
+pbf <- read.csv2(here("dados_originais/ipeadata-PBF2013-2026.csv"), skip = 1, header = TRUE, stringsAsFactors = FALSE)
+
+pbf <- pbf |>
+    pivot_longer(cols = starts_with("X"), names_prefix = "X", names_to = "ano", values_to = "beneficiarios_pbf") |>
+    filter(ano %in% c("2013", "2017", "2020", "2025"))
+```
+
+## Tratando dados do IBGE
+
+### População estimada
+
+```{r}
+library(sidrar)
+
+pop <- get_sidra(
+  api = "/t/6579/n6/all/v/9324/p/2010,2013,2017,2020,2022,2025"
+)
+
+pop <- pop %>%
+  transmute(
+    cod_mun = as.numeric(`Município (Código)`),
+    municipio = Município,
+    ano = as.numeric(Ano),
+    pop_total = Valor
+  )
+```
+
+## Dados população residente em Favelas e Comunidades Urbanas (2022)
+
+```{r}
+fcu2022 <- get_sidra(
+  api = "/t/9888/n6/all"
+)
+
+fcu2022 <- fcu2022 |>
+    filter(`Unidade de Medida` == "Pessoas") |>
+    select(Ano, `Município (Código)`,Valor) 
+```
+
+
+## Dados população residente em "Aglomerados Subnormais" (2010)
+
+
+```{r}
+asn2010 <- get_sidra(
+  api = "/t/3381/n6/all"
+)
+
+asn2010 <- asn2010 |>
+    filter(`Unidade de Medida` == "Pessoas") |>
+    select(Ano, `Município (Código)`,Valor) 
+```
+
+### PIB per capita municipal
+```{r}
+pib <- get_sidra(
+  api = "/t/5938/n6/all/v/37/p/2013,2017,2020,2023"
+)
+
+pib <- pib |>
+    select(Ano, `Município (Código)`,Valor) |>
+    rename(pib_milharesReais = Valor) 
+```
+
+## Juntando os dados
+Junta os dados de asn2010, fcu2022, pib, pop e pbf, calculando os dados per capita (com base em pop) para cada um dos outros dados
+
+
+```{r}
+# Primeiro, padronizamos as colunas de Código de Município e Ano em todas as bases para garantir o funcionamento do join.
+pop <- pop |> 
+  mutate(ano = as.numeric(ano), cod_mun = as.character(cod_mun))|>
+  select(cod_mun, ano, pop_total)
+
+pbf_join <- pbf |>
+  rename(cod_mun = Código) |> 
+  mutate(ano = as.numeric(ano), cod_mun = as.character(cod_mun))|>
+  select(cod_mun, ano, beneficiarios_pbf)
+
+asn2010_join <- asn2010 |>
+  rename(cod_mun = `Município (Código)`, ano = Ano, pop_em_favelas = Valor) |>
+  mutate(ano = as.numeric(ano), cod_mun = as.character(cod_mun)) |>
+  select(cod_mun, ano, pop_em_favelas)
+
+fcu2022_join <- fcu2022 |>
+  rename(cod_mun = `Município (Código)`, ano = Ano, pop_em_favelas = Valor) |>
+  mutate(ano = as.numeric(ano), cod_mun = as.character(cod_mun)) |>
+  select(cod_mun, ano, pop_em_favelas)
+
+pop_favelas <- full_join(asn2010_join, fcu2022_join) |>
+  mutate(ano = as.numeric(ano), cod_mun = as.character(cod_mun))
+
+pib_join <- pib |>
+  rename(cod_mun = `Município (Código)`, ano = Ano) |>
+  mutate(ano = as.numeric(ano), cod_mun = as.character(cod_mun))|>
+  select(cod_mun, ano, pib_milharesReais)
+
+# Realizando a junção de todos os dados usando full_join
+dados_finais <- pop |>
+  full_join(pbf_join, by = c("cod_mun", "ano")) |>
+  full_join(pib_join, by = c("cod_mun", "ano")) |>
+  merge(pop_favelas, by = c("cod_mun", "ano"), all= T ) 
+
+```
+
+### Calculando os valores per capita
+```{r}
+dados_finais <- dados_finais |>
+  mutate(
+    pbf_per_capita = beneficiarios_pbf / pop_total,
+    pop_em_favelas_per_capita = pop_em_favelas / pop_total,
+    pib_per_capita = pib_milharesReais / pop_total,
+    codigo_ibge = cod_mun
+  )
+```
+
+## Exportando os dados finais
+
+```{r}
+write.csv2(dados_finais, here("dados_tratados/dados_socioeconomicos.csv"), row.names = FALSE)
+
+saveRDS(dados_finais, here("dados_tratados/dados_socioeconomicos.RDS"))
+```

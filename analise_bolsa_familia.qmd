@@ -1,0 +1,72 @@
+---
+title: "Análise de Benefícios - Bolsa Família"
+format: html
+engine: knitr
+---
+
+## Configuração e Conexão
+
+Primeiro, vamos carregar os pacotes necessários e criar uma conexão em memória com o `duckdb`.
+
+```{r}
+#| label: setup
+#| warning: false
+#| message: false
+
+install.packages("duckdb")
+library(DBI)
+library(duckdb)
+# Criando a conexão em memória
+con <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+```
+
+> **Nota:** Para que as queries abaixo funcionem utilizando o DuckDB, certifique-se de que os caminhos no `FROM` apontem para arquivos locais compatíveis (ex: `'caminho/para/dados.parquet'`) ou que as tabelas/views com a nomenclatura do BigQuery (`basedosdados...`) tenham sido devidamente registradas na sua sessão do DuckDB.
+
+## Consulta Original
+
+Aqui executamos a consulta solicitada utilizando um bloco nativo de SQL do Quarto:
+
+```{sql}
+#| connection: con
+#| output.var: "dados_originais"
+SELECT
+    dados.ano_competencia as ano_competencia,
+    dados.id_municipio AS id_municipio,
+    diretorio_id_municipio.nome AS id_municipio_nome,
+    dados.nis_favorecido as nis_favorecido
+FROM `basedosdados.br_cgu_beneficios_cidadao.bolsa_familia_pagamento` AS dados
+LEFT JOIN (SELECT DISTINCT id_municipio, nome FROM `basedosdados.br_bd_diretorios_brasil.municipio`) AS diretorio_id_municipio
+    ON dados.id_municipio = diretorio_id_municipio.id_municipio
+```
+
+## Sumarização: NIS Únicos por Ano e Município
+
+Para contar o número de NIS únicos (`COUNT(DISTINCT nis_favorecido)`), podemos encapsular a sua consulta original dentro de uma CTE usando a cláusula `WITH`:
+
+```{sql}
+#| connection: con
+#| output.var: "resumo_municipio_ano"
+WITH dados_base AS (
+    SELECT
+        dados.ano_competencia as ano_competencia,
+        dados.id_municipio AS id_municipio,
+        diretorio_id_municipio.nome AS id_municipio_nome,
+        dados.nis_favorecido as nis_favorecido
+    FROM `basedosdados.br_cgu_beneficios_cidadao.bolsa_familia_pagamento` AS dados
+    LEFT JOIN (SELECT DISTINCT id_municipio, nome FROM `basedosdados.br_bd_diretorios_brasil.municipio`) AS diretorio_id_municipio
+        ON dados.id_municipio = diretorio_id_municipio.id_municipio
+)
+SELECT
+    ano_competencia,
+    id_municipio,
+    id_municipio_nome,
+    COUNT(DISTINCT nis_favorecido) AS total_nis_unicos
+FROM dados_base
+GROUP BY
+    ano_competencia,
+    id_municipio,
+    id_municipio_nome
+ORDER BY
+    ano_competencia,
+    id_municipio_nome
+```
