@@ -1,0 +1,532 @@
+---
+title: "Modelos de Markov Latentes para Agrupamento de Municípios"
+subtitle: "Análise exploratória com subconjunto do Acre (AC)"
+author: ""
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    number-sections: true
+lang: pt
+---
+
+# Introdução
+
+Este documento aplica **Modelos de Markov Latentes (LMM)** a dados em painel de
+municípios brasileiros, usando o pacote `LMest` (Bartolucci, Pandolfi e Pennoni, 2017).
+
+O objetivo é identificar **perfis (estados latentes) de capacidade institucional municipal**
+em gestão de riscos e desastres, acompanhando sua evolução ao longo do tempo.
+
+**Estrutura do painel:**
+
+- **Unidade observacional:** município (`codigo_ibge`)
+- **Unidade temporal:** ano (`ano`)
+- **Variáveis de resposta:** indicadores binários de políticas/estruturas municipais
+  (prefixo `X`) — cada um vale 0 (ausente) ou 1 (presente)
+- **Variáveis de resultado:** médias móveis de desastres e óbitos (usadas para
+  interpretação/validação dos estados, não como input do modelo)
+
+> **Nota sobre o subset:** Este script roda sobre os municípios do Acre (AC), que
+> contam com 22 municípios e anos de 2013 a 2026 — um painel pequeno, ideal para
+> testar e calibrar o modelo antes de escalar para o Brasil inteiro.
+
+---
+
+# Pacotes
+
+```{r}
+#| label: pacotes
+#| message: false
+#| warning: false
+
+library(LMest)   # Modelos de Markov Latentes
+library(dplyr)   # Manipulação de dados
+library(tidyr)   # Reformatação de dados
+library(ggplot2) # Visualizações
+library(here)    # Caminhos relativos
+```
+
+---
+
+# Carregamento e preparação dos dados
+
+```{r}
+#| label: carrega-dados
+
+dados <- readRDS(here("dados_tratados/base_sintese.RDS"))
+
+# Subconjunto: apenas municípios do Acre
+sum_d <- dados |>
+  select(
+    codigo_ibge,
+    ano,
+    starts_with("X"),             # indicadores binários de capacidade institucional
+    media_movel_desastres,        # será usada só para interpretação/validação
+    media_movel_obitos            # será usada só para interpretação/validação
+  )
+
+# Visão geral
+glimpse(sum_d)
+summary(sum_d)
+```
+
+```{r}
+#| label: dimensoes-do-painel
+
+# Quantos municípios e quantos anos?
+cat("Municípios:", n_distinct(sum_d$codigo_ibge), "\n")
+cat("Anos:", sort(unique(sum_d$ano)), "\n")
+cat("Total de linhas:", nrow(sum_d), "\n")
+
+# Checar se o painel é balanceado (cada município tem o mesmo nº de anos)
+sum_d |>
+  count(codigo_ibge) |>
+  count(n, name = "municipios_com_esse_n_de_anos")
+```
+
+---
+
+# Identificação das variáveis de resposta
+
+O LMest trabalha com **variáveis de resposta categóricas**. Aqui, todas as variáveis
+`X` são binárias (0/1).
+
+```{r}
+#| label: variaveis-resposta
+
+# Nomes das variáveis de resposta (indicadores binários)
+vars_X <- sum_d |>
+  select(starts_with("X")) |>
+  names()
+
+cat("Variáveis de resposta (n =", length(vars_X), "):\n")
+print(vars_X)
+```
+
+```{r}
+#| label: missings-por-variavel
+
+# Verificar missings: algumas variáveis têm NAs (por exemplo, X3, X5, X20...)
+# O LMest suporta dados faltantes sob a hipótese MAR (Missing At Random)
+df_na <- sum_d |>
+  select(all_of(vars_X), ano) |>
+  group_by(ano) |>
+  summarise(across(everything(), ~sum(is.na(.))))
+  tidyr::pivot_longer(everything(), names_to = "variavel", values_to = "n_NA") |>
+  arrange(desc(n_NA))
+```
+
+
+# Preparação dos dados para o LMest
+
+O `LMest` exige os dados no formato **wide** (uma linha por unidade, uma coluna
+por ocasião temporal). A função `long2wide()` do próprio pacote faz essa conversão.
+
+> **Importante:** as categorias das respostas devem começar em 0. Como nossas
+> variáveis já são binárias (0/1), não há necessidade de recodificação.
+
+```{r}
+#| label: converte-para-wide
+
+# Separar apenas as colunas necessárias para o modelo
+# (sem as variáveis de resultado que usaremos depois para interpretação)
+dados_modelo <- sum_d |>
+  select(codigo_ibge, ano, all_of(vars_X)) |>
+  as.data.frame()
+
+```
+
+---
+
+# Seleção do número de estados latentes
+
+Antes de interpretar os resultados, precisamos escolher o número **k** de estados
+latentes (perfis de capacidade institucional). Usamos os critérios **AIC** e **BIC**:
+quanto menor, melhor. O BIC penaliza modelos mais complexos de forma mais severa.
+
+A função `search.model.LM()` estima o modelo para vários valores de `k` e retorna
+uma tabela comparativa.
+
+> **Atenção ao tempo:** essa etapa pode ser demorada dependendo do tamanho do painel e do número máximo de estados testado. Para dados do Acre (22 municípios), deve ser rápido. Para o Brasil inteiro, considere usar um servidor ou rodar em paralelo.
+
+```{r}
+#| label: selecao-k
+#| cache: true  # <- guarda o resultado em cache para não re-rodar desnecessariamente
+
+"time_sel <- proc.time()
+
+# Construir fórmula de respostas
+formula_respostas <- lmestFormula(
+  data     = dados_modelo,
+  response = vars_X
+)$responsesFormula
+
+# Busca do k ótimo
+res_busca_br <- lmestSearch(
+  responsesFormula = formula_respostas,
+  index            = c("codigo_ibge", "ano"),
+  data             = dados_modelo,
+  version          = "categorical",
+  k                = 1:5,
+  modBasic         = 1,
+  seed             = 42
+)
+
+summary(res_busca_br)
+
+proc.time() - time_sel"
+```
+
+```{r}
+#| label: tabela-selecao-k
+
+# Tabela com AIC e BIC para cada k
+'summary(res_busca)'
+```
+
+```{r}
+'#| label: plot-selecao-k
+
+# Extrair a tabela do objeto de busca para plotar
+tabela_ic <- as.data.frame(summary(res_busca))
+
+# Caso summary retorne uma matrix, converter manualmente:
+# tabela_ic <- data.frame(
+#   k   = tabela_ic[, "states"],
+#   AIC = tabela_ic[, "AIC"],
+#   BIC = tabela_ic[, "BIC"]
+# )
+
+# Gráfico AIC e BIC por número de estados
+tabela_ic |>
+  tidyr::pivot_longer(cols = c(AIC, BIC), names_to = "criterio", values_to = "valor") |>
+  ggplot(aes(x = states, y = valor, color = criterio, group = criterio)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  scale_x_continuous(breaks = 1:5) +
+  labs(
+    title = "Seleção do número de estados latentes",
+    subtitle = "Menor valor de AIC/BIC indica melhor modelo",
+    x = "Número de estados (k)",
+    y = "Valor do critério",
+    color = "Critério"
+  ) +
+  theme_minimal()'
+```
+
+> **Como escolher k?** Procure o "cotovelo" na curva do BIC. Se AIC e BIC
+> discordarem, prefira o BIC — ele é mais conservador e evita sobreajuste.
+
+---
+
+# Estimação do modelo com k escolhido
+
+Após identificar o `k` ideal na etapa anterior, estimamos o modelo final com
+erros padrão para interpretar os parâmetros.
+
+```{r}
+#| label: define-k
+
+# AJUSTE AQUI com base no resultado da seção anterior
+k_escolhido <- 4  # <- altere conforme o menor BIC encontrado
+```
+
+```{r}
+set.seed(42)
+
+time_mod <- proc.time()
+
+modelo_final <- lmest(
+  responsesFormula = NULL,   # NULL = todas as colunas de YY são respostas
+  index            = c("codigo_ibge", "ano"),  # identificadores do painel
+  data             = dados_modelo,  # data.frame no formato LONGO 
+  k                = k_escolhido,
+  start            = 1,      # inicialização aleatória
+  modBasic         = 1,      # transições homogêneas no tempo
+  out_se           = TRUE
+)
+
+proc.time() - time_mod
+
+modelo_final
+summary(modelo_final)
+
+if(dir.exists(here("resultados")) == FALSE) {
+  dir.create(here("resultados"))
+}
+
+saveRDS(modelo_final, here("resultados/modelo_final_AC.RDS"))
+
+modelo_final <- readRDS(here("resultados/modelo_final_AC.RDS"))
+```
+
+```{r}
+#| label: resultado-modelo
+
+# Sumário rápido: log-verossimilhança, nº de parâmetros, AIC, BIC
+modelo_final
+
+# Resultado completo: probabilidades iniciais, de transição e de emissão
+summary(modelo_final)
+```
+
+---
+
+# Interpretação dos estados latentes
+
+## Probabilidades de emissão (Psi)
+
+As **probabilidades de emissão** (`Psi`) mostram a probabilidade de cada
+indicador binário ser igual a 1 dado o estado latente. Elas são o coração
+da interpretação: definem o "perfil" de cada grupo.
+
+```{r}
+#| label: emissao
+
+# Psi tem dimensões: categoria × estado × indicador
+# Para variáveis binárias: categoria 0 = ausente, categoria 1 = presente
+# Queremos P(X_j = 1 | estado = u) para cada indicador j e estado u
+
+# Extrair P(variável presente | estado)
+psi <- modelo_final$Psi  # array: [categoria, estado, indicador]
+
+# Probabilidade de cada indicador ser 1 (presente) por estado latente
+prob_presente <- psi[2, , ]  # linha 2 = categoria "1"
+rownames(prob_presente) <- paste0("Estado_", 1:k_escolhido)
+colnames(prob_presente) <- vars_X
+
+# Transpor para facilitar leitura: indicadores nas linhas, estados nas colunas
+prob_presente_t <- t(prob_presente)
+round(prob_presente_t, 3)
+```
+
+```{r}
+#| label: heatmap-emissao
+
+# Heatmap das probabilidades de emissão: facilita a interpretação dos perfis
+prob_df <- as.data.frame(prob_presente_t) |>
+  tibble::rownames_to_column("indicador") |>
+  tidyr::pivot_longer(-indicador, names_to = "estado", values_to = "prob")
+
+ggplot(prob_df, aes(x = estado, y = indicador, fill = prob)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(prob, 2)), size = 3) +
+  scale_fill_gradient2(
+    low = "#d73027", mid = "#ffffbf", high = "#1a9850",
+    midpoint = 0.5, limits = c(0, 1),
+    name = "P(presente)"
+  ) +
+  labs(
+    title = "Probabilidades de emissão por estado latente",
+    subtitle = "Verde = indicador quase sempre presente; Vermelho = quase sempre ausente",
+    x = "Estado latente",
+    y = "Indicador"
+  ) +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8))
+```
+
+## Probabilidades iniciais (piv)
+
+As **probabilidades iniciais** mostram em qual estado os municípios tendem a começar (no primeiro ano observado).
+
+```{r}
+#| label: prob-iniciais
+
+piv <- modelo_final$piv
+names(piv) <- paste0("Estado_", 1:k_escolhido)
+
+cat("Probabilidades iniciais:\n")
+round(piv, 3)
+```
+
+## Matriz de transição (Pi)
+
+A **matriz de transição** mostra a probabilidade de um município passar de um estado para outro de um ano para o outro.
+
+```{r}
+#| label: matriz-transicao
+
+# Com modBasic=1, todas as fatias de Pi são idênticas (transição homogênea).
+# Pi tem dimensão [k × k × TT_interno], então extraímos só a segunda fatia # (a primeira é zeros — representa o período antes do início do painel).
+Pi_mat <- modelo_final$Pi[, , 2]  # fatia 2: primeira transição real
+
+rownames(Pi_mat) <- paste0("De_", 1:k_escolhido)
+colnames(Pi_mat) <- paste0("Para_", 1:k_escolhido)
+
+cat("Matriz de transição (probabilidades de ano t → ano t+1):\n")
+round(Pi_mat, 3)
+```
+
+```{r}
+#| label: plot-transicao
+
+Pi_df <- as.data.frame(Pi_mat) |>
+  tibble::rownames_to_column("de") |>
+  pivot_longer(-de, names_to = "para", values_to = "prob")
+
+ggplot(Pi_df, aes(x = para, y = de, fill = prob)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(prob, 3)), size = 4) +
+  scale_fill_gradient(low = "white", high = "#2166ac", name = "Probabilidade") +
+  labs(
+    title    = "Matriz de transição entre estados latentes",
+    subtitle = "Diagonal alta = municípios tendem a permanecer no mesmo perfil ao longo do tempo",
+    x = "Estado no ano t+1",
+    y = "Estado no ano t"
+  ) +
+  theme_minimal()
+```
+
+---
+
+# Decodificação: atribuição dos municípios aos estados
+
+A **decodificação global** (algoritmo de Viterbi) encontra a sequência de estados mais provável para cada município ao longo do tempo.
+
+```{r}
+#| label: decodificacao
+
+# Decodificação global: sequência ótima de estados por município
+decode_out <- lmestDecoding(modelo_final)
+anos_painel <- sort(unique(sum_d$ano))  # c(2013, 2014, 2015, 2016, ...)
+
+# Selecionar só as colunas dos anos que existem no painel
+estados_atribuidos <- decode_out$Ug[, anos_painel]
+
+rownames(estados_atribuidos) <- sort(unique(sum_d$codigo_ibge))
+colnames(estados_atribuidos) <- anos_painel
+
+cat("Estados atribuídos por município e ano:\n")
+print(estados_atribuidos)
+```
+
+```{r}
+#| label: frequencia-estados-por-ano
+
+# Evolução da distribuição dos estados ao longo do tempo
+estados_df <- as.data.frame(estados_atribuidos) |>
+  tibble::rownames_to_column("codigo_ibge") |>
+  tidyr::pivot_longer(-codigo_ibge, names_to = "ano", values_to = "estado") |>
+  mutate(ano = as.integer(ano), estado = factor(estado))
+
+# Proporção de municípios em cada estado por ano
+estados_df |>
+  count(ano, estado) |>
+  group_by(ano) |>
+  mutate(prop = n / sum(n)) |>
+  ggplot(aes(x = ano, y = prop, fill = estado)) +
+  geom_col(position = "stack") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_brewer(palette = "Set2", name = "Estado latente") +
+  labs(
+    title = "Distribuição dos estados latentes por ano",
+    subtitle = "Municípios do Acre (AC)",
+    x = "Ano",
+    y = "Proporção de municípios"
+  ) +
+  theme_minimal()
+```
+
+---
+
+# Validação: relação dos estados com desastres e óbitos
+
+As variáveis `media_movel_desastres` e `media_movel_obitos` **não foram
+usadas no modelo**, mas podem ser usadas para validar se os estados latentes capturam diferenças reais de risco e vulnerabilidade.
+
+```{r}
+#| label: junta-resultados
+
+# Juntar o estado atribuído com as variáveis de resultado
+estados_long <- estados_df
+
+resultado_val <- sum_d |>
+  select(codigo_ibge, ano, media_movel_desastres, media_movel_obitos) |>
+  mutate(codigo_ibge = as.character(codigo_ibge),
+         ano = as.integer(ano)) |>
+  left_join(estados_long, by = c("codigo_ibge", "ano"))
+
+head(resultado_val)
+```
+
+```{r}
+#| label: validacao-descritiva
+
+# Médias de desastres e óbitos por estado latente
+resultado_val |>
+  group_by(estado) |>
+  summarise(
+    media_desastres = mean(media_movel_desastres, na.rm = TRUE),
+    media_obitos    = mean(media_movel_obitos, na.rm = TRUE),
+    n_obs           = n()
+  ) |>
+  arrange(estado)
+```
+
+```{r}
+#| label: boxplot-validacao
+
+# Boxplot: distribuição das médias móveis de desastres por estado
+resultado_val |>
+  filter(!is.na(estado), !is.na(media_movel_desastres)) |>
+  ggplot(aes(x = estado, y = media_movel_desastres, fill = estado)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 21) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Média móvel de desastres por estado latente",
+    subtitle = "Validação externa: estados com maior capacidade devem ter menos desastres registrados",
+    x = "Estado latente",
+    y = "Média móvel de desastres"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+---
+
+# Resumo e próximos passos
+
+```{r}
+#| label: resumo-final
+
+cat("=== RESUMO DO MODELO ===\n\n")
+cat("Número de estados latentes (k):", k_escolhido, "\n")
+cat("Log-verossimilhança:", round(modelo_final$lk, 2), "\n")
+cat("AIC:", round(modelo_final$aic, 2), "\n")
+cat("BIC:", round(modelo_final$bic, 2), "\n\n")
+
+cat("Distribuição dos municípios por estado (média temporal):\n")
+estados_df |>
+  count(estado) |>
+  mutate(prop = round(n / sum(n) * 100, 1)) |>
+  print()
+```
+
+> **Próximos passos sugeridos:**
+>
+> 1. Ajustar `k_escolhido` com base no BIC da seção de seleção.
+> 2. Rodar o mesmo pipeline para outras UFs ou para o Brasil inteiro.
+> 3. Considerar o modelo com covariáveis na distribuição latente
+>    (`est_lm_cov_latent`) para entender o que prediz a transição entre perfis.
+> 4. Exportar `estados_df` como CSV/RDS para uso em análises subsequentes.
+
+```{r}
+#| label: exporta-resultados
+#| eval: false  # <- mude para TRUE quando quiser salvar
+
+# Exportar tabela de estados atribuídos
+saveRDS(estados_df, here("resultados/estados_latentes.RDS"))
+write.csv(estados_df, here("resultados/estados_latentes.csv"), row.names = FALSE)
+```
+
+---
+
+# Referência
+
+Bartolucci, F., Pandolfi, S., & Pennoni, F. (2017). LMest: An R Package for Latent
+Markov Models for Longitudinal Categorical Data. *Journal of Statistical Software*, 81(4).
+<https://doi.org/10.18637/jss.v081.i04>
