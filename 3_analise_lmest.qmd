@@ -1,6 +1,5 @@
 ---
 title: "Modelos de Markov Latentes para Agrupamento de Municípios"
-subtitle: "Análise exploratória com subconjunto do Acre (AC)"
 author: ""
 date: today
 format:
@@ -58,7 +57,6 @@ library(here)    # Caminhos relativos
 
 dados <- readRDS(here("dados_tratados/base_sintese.RDS"))
 
-# Subconjunto: apenas municípios do Acre
 sum_d <- dados |>
   select(
     codigo_ibge,
@@ -66,7 +64,8 @@ sum_d <- dados |>
     starts_with("X"),             # indicadores binários de capacidade institucional
     media_movel_desastres,        # será usada só para interpretação/validação
     media_movel_obitos            # será usada só para interpretação/validação
-  )
+  ) |>
+    select(!c("X3_plano_reducao_riscos", "X5_carta_geotecnica","X7_cadastro_familias_risco", "X20_sistema_monitoramento_alerta"))
 
 # Visão geral
 glimpse(sum_d)
@@ -114,9 +113,7 @@ print(vars_X)
 df_na <- sum_d |>
   select(all_of(vars_X), ano) |>
   group_by(ano) |>
-  summarise(across(everything(), ~sum(is.na(.))))
-  tidyr::pivot_longer(everything(), names_to = "variavel", values_to = "n_NA") |>
-  arrange(desc(n_NA))
+  summarise(across(everything(), ~sum(is.na(.)))) 
 ```
 
 
@@ -164,34 +161,37 @@ formula_respostas <- lmestFormula(
   response = vars_X
 )$responsesFormula
 
-# Busca do k ótimo
-res_busca_br <- lmestSearch(
-  responsesFormula = formula_respostas,
-  index            = c("codigo_ibge", "ano"),
+
+res_busca <- lmestSearch(
+  responsesFormula = NULL,
+  index            = c('codigo_ibge', 'ano'),
   data             = dados_modelo,
-  version          = "categorical",
-  k                = 1:5,
+  version          = 'categorical',
+  k                = 2:8,
   modBasic         = 1,
+  tol1              = 1e-3,    # Mantém a convergência rápida
+  tol2              = 1e-3,
   seed             = 42
 )
 
-summary(res_busca_br)
+proc.time() - time_sel
+"
 
-proc.time() - time_sel"
 ```
+
 
 ```{r}
 #| label: tabela-selecao-k
 
 # Tabela com AIC e BIC para cada k
-'summary(res_busca)'
+"summary(res_busca)"
 ```
 
 ```{r}
-'#| label: plot-selecao-k
+#| label: plot-selecao-k
 
 # Extrair a tabela do objeto de busca para plotar
-tabela_ic <- as.data.frame(summary(res_busca))
+'tabela_ic <- as.data.frame(summary(res_busca))
 
 # Caso summary retorne uma matrix, converter manualmente:
 # tabela_ic <- data.frame(
@@ -217,6 +217,8 @@ tabela_ic |>
   theme_minimal()'
 ```
 
+
+
 > **Como escolher k?** Procure o "cotovelo" na curva do BIC. Se AIC e BIC
 > discordarem, prefira o BIC — ele é mais conservador e evita sobreajuste.
 
@@ -235,18 +237,20 @@ k_escolhido <- 4  # <- altere conforme o menor BIC encontrado
 ```
 
 ```{r}
-set.seed(42)
+'set.seed(42)
 
 time_mod <- proc.time()
 
 modelo_final <- lmest(
-  responsesFormula = NULL,   # NULL = todas as colunas de YY são respostas
-  index            = c("codigo_ibge", "ano"),  # identificadores do painel
-  data             = dados_modelo,  # data.frame no formato LONGO 
+  responsesFormula = NULL, # NULL = todas as colunas de YY são respostas
+  index            = c("codigo_ibge", "ano"), # identificadores do painel
+  data             = dados_modelo, # data.frame no formato LONGO 
   k                = k_escolhido,
-  start            = 1,      # inicialização aleatória
-  modBasic         = 1,      # transições homogêneas no tempo
-  out_se           = TRUE
+  modBasic         = 1,
+  start            = 0,       # determinístico: muito mais rápido para dados grandes
+  out_se           = FALSE,   # sem erros padrão nesta rodada
+  tol              = 1e-3,    # tolerância menos rígida: convergência mais rápida com impacto mínimo nos parâmetros estimados
+  seed             = 42
 )
 
 proc.time() - time_mod
@@ -258,14 +262,41 @@ if(dir.exists(here("resultados")) == FALSE) {
   dir.create(here("resultados"))
 }
 
-saveRDS(modelo_final, here("resultados/modelo_final_AC.RDS"))
+saveRDS(modelo_final, here("resultados/modelo_final_BR.RDS"))'
 
-modelo_final <- readRDS(here("resultados/modelo_final_AC.RDS"))
+modelo_final <- readRDS(here("resultados/modelo_final_BR.RDS"))
+```
+
+```{r}
+'# Segunda rodagem para obter os erros padrão, se necessário
+time_mod_se <- proc.time()
+
+modelo_final_se <- lmest(
+  responsesFormula = formula_respostas, 
+  index            = c("codigo_ibge", "ano"), 
+  data             = dados_modelo_br, 
+  k                = k_escolhido,
+  modBasic         = 1,
+  start            = 2,       # Indica que os valores iniciais serão fornecidos manualmente
+  out_se           = TRUE,    # Ativa o cálculo dos erros padrão nesta rodada
+  tol              = 1e-6,    
+  seed             = 42,
+  # Alimentando o modelo com os parâmetros da rodada determinística anterior
+  piv              = modelo_final$piv,
+  Pi               = modelo_final$Pi,
+  Psi              = modelo_final$Psi
+)
+
+proc.time() - time_mod_se
+
+# Salvar o modelo final com erros padrão
+saveRDS(modelo_final_se, here("resultados/modelo_final_se_BR.RDS"))'
 ```
 
 ```{r}
 #| label: resultado-modelo
 
+modelo_final <- readRDS(here("resultados/modelo_final_BR.RDS"))
 # Sumário rápido: log-verossimilhança, nº de parâmetros, AIC, BIC
 modelo_final
 
@@ -327,6 +358,8 @@ ggplot(prob_df, aes(x = estado, y = indicador, fill = prob)) +
   ) +
   theme_minimal() +
   theme(axis.text.y = element_text(size = 8))
+
+ggsave(here("resultados/heatmap_emissao.png"), width = 8, height = 6)
 ```
 
 ## Probabilidades iniciais (piv)
@@ -379,6 +412,8 @@ ggplot(Pi_df, aes(x = para, y = de, fill = prob)) +
     y = "Estado no ano t"
   ) +
   theme_minimal()
+
+ggsave(here("resultados/heatmap_transicao.png"), width = 6, height = 5)
 ```
 
 ---
@@ -389,21 +424,101 @@ A **decodificação global** (algoritmo de Viterbi) encontra a sequência de est
 
 ```{r}
 #| label: decodificacao
+# 1. Recriar e ORDENAR estritamente a base de dados (Garante o funcionamento do LMest)
+dados_modelo <- sum_d |>
+  select(codigo_ibge, ano, all_of(vars_X)) |>
+  arrange(codigo_ibge, ano) |>  # ORDENAÇÃO CRÍTICA AQUI
+  as.data.frame()
 
-# Decodificação global: sequência ótima de estados por município
-decode_out <- lmestDecoding(modelo_final)
-anos_painel <- sort(unique(sum_d$ano))  # c(2013, 2014, 2015, 2016, ...)
+# 2. Guardar os IDs originais alinhados com a nova ordenação
+mapa_ids <- data.frame(
+  codigo_ibge_original = dados_modelo$codigo_ibge,
+  ano_original         = dados_modelo$ano
+)
 
-# Selecionar só as colunas dos anos que existem no painel
-estados_atribuidos <- decode_out$Ug[, anos_painel]
+# 3. Converter para sequências numéricas (1 a 4, e 1 a 5571)
+dados_modelo$codigo_ibge <- as.numeric(as.factor(dados_modelo$codigo_ibge))
+dados_modelo$ano         <- as.numeric(as.factor(dados_modelo$ano))
 
-rownames(estados_atribuidos) <- sort(unique(sum_d$codigo_ibge))
-colnames(estados_atribuidos) <- anos_painel
+# 4. Construir a fórmula explicitamente (evita o bug do NULL na decodificação)
+formula_respostas <- lmestFormula(
+  data     = dados_modelo,
+  response = vars_X
+)$responsesFormula
+
+# Função Viterbi direta usando os parâmetros do seu modelo_corrigido
+decodificar_viterbi <- function(modelo, df_longo, vars_resp) {
+  piv <- modelo$piv
+  Pi  <- modelo$Pi
+  Psi <- modelo$Psi
+  k   <- modelo$k
+  
+  # Garantir ordenação por município e ano
+  df_longo <- df_longo[order(df_longo$codigo_ibge, df_longo$ano), ]
+  ids  <- unique(df_longo$codigo_ibge)
+  anos <- sort(unique(df_longo$ano))
+  n    <- length(ids)
+  TT   <- length(anos)
+  
+  # Matriz de respostas (n x TT x J)
+  Y_mat <- as.matrix(df_longo[, vars_resp])
+  
+  # Calcular P(Y_{i,t} | Estado = u) em log para evitar underflow
+  log_emiss <- array(0, dim = c(n, TT, k))
+  for (j in seq_along(vars_resp)) {
+    y_j <- matrix(Y_mat[, j], nrow = n, ncol = TT, byrow = TRUE)
+    for (u in 1:k) {
+      # P(X_j = y | estado = u); se for NA, log(1) = 0 (MAR)
+      prob_0 <- log(pmax(Psi[1, u, j], 1e-300))
+      prob_1 <- log(pmax(Psi[2, u, j], 1e-300))
+      log_p  <- ifelse(is.na(y_j), 0, ifelse(y_j == 1, prob_1, prob_0))
+      log_emiss[, , u] <- log_emiss[, , u] + log_p
+    }
+  }
+  
+  # Algoritmo de Viterbi (programação dinâmica)
+  Ug <- matrix(0L, nrow = n, ncol = TT)
+  log_piv <- log(pmax(piv, 1e-300))
+  
+  for (i in 1:n) {
+    delta <- matrix(-Inf, nrow = TT, ncol = k)
+    psi_back <- matrix(0L, nrow = TT, ncol = k)
+    
+    # t = 1
+    delta[1, ] <- log_piv + log_emiss[i, 1, ]
+    
+    # t = 2 ... TT
+    for (t in 2:TT) {
+      log_Pi <- log(pmax(Pi[, , t], 1e-300))
+      for (u in 1:k) {
+        scores <- delta[t - 1, ] + log_Pi[, u]
+        psi_back[t, u] <- which.max(scores)
+        delta[t, u] <- max(scores) + log_emiss[i, t, u]
+      }
+    }
+    
+    # Backtracking (caminho ótimo)
+    Ug[i, TT] <- which.max(delta[TT, ])
+    for (t in (TT - 1):1) {
+      Ug[i, t] <- psi_back[t + 1, Ug[i, t + 1]]
+    }
+  }
+  
+  rownames(Ug) <- ids
+  colnames(Ug) <- anos
+  return(Ug)
+}
+
+# Organizar e devolver os identificadores originais aos resultados
+estados_atribuidos <- decodificar_viterbi(
+  modelo    = modelo_final,
+  df_longo  = sum_d,
+  vars_resp = vars_X
+)
 
 cat("Estados atribuídos por município e ano:\n")
-print(estados_atribuidos)
+head(estados_atribuidos)
 ```
-
 ```{r}
 #| label: frequencia-estados-por-ano
 
@@ -429,6 +544,8 @@ estados_df |>
     y = "Proporção de municípios"
   ) +
   theme_minimal()
+
+ggsave(here("resultados/distribuicao_estados_por_ano.png"), width = 8, height = 5)
 ```
 
 ---
@@ -442,7 +559,8 @@ usadas no modelo**, mas podem ser usadas para validar se os estados latentes cap
 #| label: junta-resultados
 
 # Juntar o estado atribuído com as variáveis de resultado
-estados_long <- estados_df
+estados_long <- estados_df |>
+  mutate(codigo_ibge = sub("^X", "", as.character(codigo_ibge))) # Remove o "X" inicial
 
 resultado_val <- sum_d |>
   select(codigo_ibge, ano, media_movel_desastres, media_movel_obitos) |>
@@ -484,6 +602,8 @@ resultado_val |>
   ) +
   theme_minimal() +
   theme(legend.position = "none")
+
+ggsave(here("resultados/boxplot_desastres_por_estado.png"), width = 8, height = 5)
 ```
 
 ---
